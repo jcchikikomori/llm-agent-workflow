@@ -1,0 +1,7 @@
+{
+  "wandavision": {
+    "command": "${CLAUDE_PLUGIN_ROOT}/scripts/run-wandavision.sh",
+    "args": [],
+    "env": {}
+  }
+}

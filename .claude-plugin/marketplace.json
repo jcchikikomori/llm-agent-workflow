@@ -101,6 +101,12 @@
       "source": "./plugin-token-saver",
       "description": "Token-saving behavioral guidance — plan mode, proactive compaction, specific prompts, delegation, CLAUDE.md limits, and effort advice",
       "category": "behavior-control"
+    },
+    {
+      "name": "wandavision",
+      "source": "./plugin-wandavision",
+      "description": "Bundles the mcp-vision MCP server and enforces deterministic, pixel-accurate reads of every image instead of LLM guesswork",
+      "category": "quality-enforcement"
     }
   ]
 }
