@@ -1,19 +1,12 @@
 {
-  "name": "gh-issue-to-pr",
-  "version": "0.3.0",
+  "name": "opencode-gh-issue-to-pr",
+  "version": "0.2.0",
   "description": "Drives a single GitHub issue end-to-end to a merged PR — investigate, plan, branch, implement, test, and (with explicit confirmation at each hard-to-reverse step) commit, open PR, review, merge, and close",
+  "type": "module",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"
   },
   "homepage": "https://github.com/jcchikikomori/claude-workflow",
-  "repository": "https://github.com/jcchikikomori/claude-workflow.git",
-  "license": "MIT",
-  "keywords": ["github", "issue", "pull-request", "git-flow", "workflow", "automation"],
-  "agents": [
-    "./agents/gh-issue-to-pr.md"
-  ],
-  "skills": [
-    "./skills/gh-issue-to-pr"
-  ]
+  "license": "MIT"
 }

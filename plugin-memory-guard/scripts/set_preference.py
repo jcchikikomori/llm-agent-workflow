@@ -14,6 +14,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 
+import memory_guard_common as _mgc  # noqa: E402
+
+# Cross-platform state dir: prefer the OpenCode config dir when it exists,
+# else fall back to the Claude Code dir that memory_guard_common.py defaults
+# to. The state/preference file formats are identical in both, so the two
+# runtimes can share state. (memory_guard_common resolves STATE_DIR /
+# PROJECT_PREFS_DIR at call time, so overriding them here is sufficient.)
+if (Path.home() / ".config" / "opencode").exists():
+    _mgc.STATE_DIR = Path.home() / ".config" / "opencode" / ".memory-guard"
+    _mgc.PROJECT_PREFS_DIR = _mgc.STATE_DIR / "project-prefs"
+
 from memory_guard_common import write_project_preference  # noqa: E402
 
 

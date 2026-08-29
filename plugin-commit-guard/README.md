@@ -35,6 +35,10 @@ The hook never modifies the commit command. If your repository requires signed c
 
 ## Changelog
 
+### 0.2.0
+
+Added OpenCode TypeScript port with SHA256 approval flow (`plugins/opencode-commit-guard.ts`) and `/commit-guard` slash command (`commands/commit-guard.md`). Token file path moved to `~/.config/opencode/.commit-guard-token` on OpenCode. Added OpenCode npm package manifest.
+
 ### 0.1.1
 
 Fix: strip quoted strings before `git commit` detection — prevents the approval token-write command from falsely triggering the hook.

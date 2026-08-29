@@ -60,6 +60,13 @@ Before posting to any external platform, Claude will:
 
 ## Version History
 
+### 0.4.0
+
+- Added OpenCode TypeScript port (`plugins/opencode-claude-attribution.ts`)
+- Added `/claude-attribution` slash command (`commands/claude-attribution.md`)
+- Attribution enforcement now limited to Claude LLMs only — `chat.params` hook tracks provider/model per session, `tool.execute.before` skips non-Claude models
+- Added OpenCode npm package manifest (`package.json`)
+
 ### 0.3.0
 
 - Added `NATIVE_ATTRIBUTION_TOOL_PATTERNS` — Slack (`mcp__slack__*`) tools are now exempt from the text attribution check since Slack adds "Sent using @Claude" natively.

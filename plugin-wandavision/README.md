@@ -1,6 +1,6 @@
 # wandavision
 
-Bundles a local computer-vision MCP server ([`mcp-vision`](https://github.com/groundlight/mcp-vision), run via Docker) and enforces that every image — user-submitted or produced by any other tool — gets pixel-accurate, deterministic analysis instead of the LLM eyeballing it.
+Bundles a local computer-vision MCP server ([`mcp-vision`](https://github.com/jcchikikomori/mcp-vision), run via Docker) and enforces that every image — user-submitted or produced by any other tool — gets pixel-accurate, deterministic analysis instead of the LLM eyeballing it.
 
 ## How It Works
 
@@ -14,7 +14,7 @@ Bundles a local computer-vision MCP server ([`mcp-vision`](https://github.com/gr
 ### 1. Build the `mcp-vision` Docker image (one-time, per machine)
 
 ```bash
-git clone https://github.com/groundlight/mcp-vision.git "${XDG_DATA_HOME:-$HOME/.local/share}/mcp-vision"
+git clone https://github.com/jcchikikomori/mcp-vision.git "${XDG_DATA_HOME:-$HOME/.local/share}/mcp-vision"
 cd "${XDG_DATA_HOME:-$HOME/.local/share}/mcp-vision"
 docker build -t mcp-vision .
 ```
@@ -42,6 +42,13 @@ Should show `wandavision` connected, not `CONNECTION_CLOSED`. If it's closed, co
 - The workspace directory (`.wandavision_workspace/`) is created relative to wherever Claude Code was launched from (the project root) — it's project-local, not shared across projects.
 
 ## Version History
+
+### 0.2.0
+
+- Added OpenCode TypeScript port using `tool.execute.after` (`plugins/opencode-wandavision.ts`)
+- Added `/wandavision` slash command (`commands/wandavision.md`) with 3-step MCP setup instructions for OpenCode
+- MCP server now references the `jcchikikomori/mcp-vision` fork instead of upstream
+- Added OpenCode npm package manifest
 
 ### 0.1.0
 

@@ -97,6 +97,10 @@ python3 <plugin path>/scripts/reset_preference.py --repo-root /path/to/repo
 
 ## Changelog
 
+### 0.3.0
+
+Added OpenCode TypeScript ports using `experimental.chat.system.transform` (SessionStart) and `event(file.edited)` (PostToolUse). Python scripts now detect `~/.config/opencode/` vs `~/.claude/` and write state to whichever exists. Added `/memory-guard` slash command (`commands/memory-guard.md`) and OpenCode npm package manifest.
+
 ### 0.2.1
 
 Fixed a real bug found via testing: `git status --porcelain`'s default

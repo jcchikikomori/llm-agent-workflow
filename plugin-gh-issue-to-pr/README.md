@@ -69,6 +69,10 @@ it." (also via `/gh-issue-to-pr I've pushed, open the PR`).
 
 ## Changelog
 
+### 0.3.0
+
+Added `opencode-gh-issue-to-pr.md` subagent (`permission:` replaces the deprecated `tools:` field) and `/gh-issue-to-pr` slash command (`commands/gh-issue-to-pr.md`). Added OpenCode npm package manifest.
+
 ### 0.2.0
 
 Added a `/gh-issue-to-pr` slash command (`skills/gh-issue-to-pr/SKILL.md`) as an explicit entry

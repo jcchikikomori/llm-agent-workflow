@@ -1,14 +1,12 @@
 {
-  "name": "wandavision",
+  "name": "opencode-wandavision",
   "version": "0.2.0",
   "description": "Bundles the mcp-vision MCP server and enforces deterministic, pixel-accurate reads of every image — user-submitted or tool-generated — instead of LLM guesswork",
+  "type": "module",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"
   },
   "homepage": "https://github.com/jcchikikomori/claude-workflow",
-  "repository": "https://github.com/jcchikikomori/claude-workflow.git",
-  "license": "MIT",
-  "keywords": ["vision", "mcp", "screenshots", "computer-vision", "hooks"],
-  "skills": ["./skills/wandavision"]
+  "license": "MIT"
 }

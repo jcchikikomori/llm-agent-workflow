@@ -1,22 +1,12 @@
 {
-  "name": "claude-attribution",
-  "version": "0.4.0",
+  "name": "opencode-claude-attribution",
+  "version": "0.2.0",
   "description": "Appends '🤖 Written by Claude, reviewed by <user>' attribution to all external posts — GitHub, JIRA, Slack, and any MCP-connected platform",
+  "type": "module",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"
   },
   "homepage": "https://github.com/jcchikikomori/claude-workflow",
-  "repository": "https://github.com/jcchikikomori/claude-workflow.git",
-  "license": "MIT",
-  "keywords": [
-    "attribution",
-    "governance",
-    "hooks",
-    "transparency",
-    "mcp"
-  ],
-  "skills": [
-    "./skills/claude-attribution"
-  ]
+  "license": "MIT"
 }

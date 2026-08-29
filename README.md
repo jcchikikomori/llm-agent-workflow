@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/jcchikikomori/claude-workflow/pulls)
 
-End-to-end development workflows for Claude Code — specialized agents handle requirements, design, implementation, and quality checks so you get reviewable code, not just generated code.
+End-to-end development workflows for [Claude Code](https://claude.ai/code) and [OpenCode](https://opencode.ai) — specialized agents handle requirements, design, implementation, and quality checks so you get reviewable code, not just generated code.
 
 A personal fork of [@shinpr](https://github.com/shinpr)'s [claude-code-workflows](https://github.com/shinpr/claude-code-workflows), extended with a QA plugin, env-guard, and Windows compatibility.
 
@@ -111,6 +111,58 @@ For fullstack projects:
 ```bash
 /recipe-fullstack-implement "Add user authentication with JWT + login form"
 ```
+
+---
+
+## OpenCode
+
+Five plugins also ship OpenCode-compatible sources — TypeScript hooks in `plugins/`, slash commands in `commands/`, and (for `gh-issue-to-pr`) an agent in `agents/`. Skills are reused as-is because OpenCode reads `.claude/skills/<name>/SKILL.md` natively.
+
+### Install on OpenCode
+
+OpenCode loads plugin `.ts` files from `.opencode/plugins/` (project) or `~/.config/opencode/plugins/` (global). Copy the plugin files and add command/agent entries to `opencode.json`:
+
+```bash
+# Project-local — copy the TypeScript plugin files into .opencode/plugins/
+mkdir -p .opencode/plugins
+cp plugin-{attribution,commit-guard,memory-guard,wandavision}/plugins/*.ts .opencode/plugins/
+
+# Copy the command markdown files
+mkdir -p .opencode/commands
+cp plugin-{attribution,commit-guard,memory-guard,gh-issue-to-pr,wandavision}/commands/*.md .opencode/commands/
+
+# (gh-issue-to-pr only) — copy the OpenCode agent
+mkdir -p .opencode/agents
+cp plugin-gh-issue-to-pr/agents/opencode-gh-issue-to-pr.md .opencode/agents/
+```
+
+Then add the `gh-issue-to-pr` agent to your `opencode.json`:
+
+```json
+{
+  "agent": {
+    "gh-issue-to-pr": {
+      "description": "Drives a single GitHub issue end-to-end to a merged PR",
+      "mode": "subagent",
+      "permission": { "edit": "allow", "bash": "allow", "webfetch": "allow" }
+    }
+  }
+}
+```
+
+For the `wandavision` MCP server, run `/wandavision` after install — it prints the exact `docker build` and `opencode.json` `"mcp"` block to add (the MCP is the [jcchikikomori/mcp-vision fork](https://github.com/jcchikikomori/mcp-vision), not upstream).
+
+### OpenCode compatibility
+
+| Plugin | OpenCode support |
+| ------ | ----------------- |
+| `claude-attribution` | TypeScript hook (`tool.execute.before`) + `/claude-attribution` command |
+| `commit-guard` | TypeScript hook with SHA256 approval + `/commit-guard` command |
+| `memory-guard` | TypeScript hooks (`session.created` + `file.edited`) + cross-platform Python scripts + `/memory-guard` command |
+| `gh-issue-to-pr` | `gh-issue-to-pr` subagent + `/gh-issue-to-pr` command |
+| `wandavision` | TypeScript hook (`tool.execute.after`) + `/wandavision` command (MCP via `opencode.json`) |
+
+The other plugins (`dev`, `qa`, `env-guard`, `markdown-format`, `token-saver`, `metronome`, `discover`, `caveman`) are Claude Code only — they depend on Python hooks or marketplace metadata that OpenCode does not load natively.
 
 ---
 
@@ -314,11 +366,14 @@ claude-workflow/
 │       └── plugin.json
 │
 ├── plugin-attribution/           # claude-attribution plugin — AI authorship attribution
-│   ├── hooks/
+│   ├── hooks/                    # Claude Code: PreToolUse hook
 │   │   ├── hooks.json            # PreToolUse hook on mcp__.*|Bash
 │   │   └── attribution_hook.py   # Dynamic body-field detection + attribution check
-│   ├── skills/
+│   ├── skills/                   # (shared — OpenCode reads .claude/skills/ natively)
 │   │   └── claude-attribution/SKILL.md
+│   ├── commands/                 # OpenCode: /claude-attribution slash command (NEW)
+│   ├── plugins/                  # OpenCode: TypeScript plugin (NEW)
+│   ├── package.json              # OpenCode: npm manifest (NEW)
 │   └── .claude-plugin/
 │       └── plugin.json
 │
