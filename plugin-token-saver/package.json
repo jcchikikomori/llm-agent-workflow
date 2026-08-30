@@ -1,0 +1,12 @@
+{
+  "name": "opencode-token-saver",
+  "version": "0.1.0",
+  "description": "Enforces token-saving techniques in OpenCode — proactive compaction reminders, CLAUDE.md/AGENTS.md size warnings, and vague-prompt guidance",
+  "type": "module",
+  "author": {
+    "name": "John Cyrill Corsanes",
+    "url": "https://github.com/jcchikikomori"
+  },
+  "homepage": "https://github.com/jcchikikomori/claude-workflow",
+  "license": "MIT"
+}

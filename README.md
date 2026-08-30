@@ -158,11 +158,14 @@ For the `wandavision` MCP server, run `/wandavision` after install — it prints
 | ------ | ----------------- |
 | `claude-attribution` | TypeScript hook (`tool.execute.before`) + `/claude-attribution` command |
 | `commit-guard` | TypeScript hook with SHA256 approval + `/commit-guard` command |
+| `env-guard` | TypeScript hook (`tool.execute.before`) — blocks `.env`/credential reads and secret-leaking bash; throws to block, mirrors the Claude Code PreToolUse hook |
+| `markdown-format` | TypeScript hook (`tool.execute.after`) — runs `markdownlint-cli2 --fix` on `.md` writes (global binary → `npx` fallback), never throws |
 | `memory-guard` | TypeScript hooks (`session.created` + `file.edited`) + cross-platform Python scripts + `/memory-guard` command |
+| `token-saver` | TypeScript hooks (`session.created` + `tool.execute.after`) — compact-reminder + CLAUDE.md/AGENTS.md size guard; `prompt_quality` is surfaced as guidance only (OpenCode has no blocking pre-prompt event) |
 | `gh-issue-to-pr` | `gh-issue-to-pr` subagent + `/gh-issue-to-pr` command |
 | `wandavision` | TypeScript hook (`tool.execute.after`) + `/wandavision` command (MCP via `opencode.json`) |
 
-The other plugins (`dev`, `qa`, `env-guard`, `markdown-format`, `token-saver`, `metronome`, `discover`, `caveman`) are Claude Code only — they depend on Python hooks or marketplace metadata that OpenCode does not load natively.
+The remaining Claude Code-only plugins are `dev` and `qa` (subagent definitions in Claude Code's `.md` format, not directly loadable by OpenCode) and the externally maintained `metronome`, `discover`, and `caveman`.
 
 ---
 
