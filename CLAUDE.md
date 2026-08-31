@@ -50,6 +50,7 @@ All three must be kept in sync. Update them together whenever the version change
 - `plugin-commit-guard/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 - `plugin-gh-issue-to-pr/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 - `plugin-memory-guard/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
+- `plugin-opencode-migrate/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 
 ### When to bump versions
 
@@ -80,6 +81,7 @@ This registers the marketplace from the GitHub repo. Claude Code reads `.claude-
 /plugin install commit-guard@claude-workflow
 /plugin install gh-issue-to-pr@claude-workflow
 /plugin install memory-guard@claude-workflow
+/plugin install opencode-migrate@claude-workflow
 
 # External add-ons (pulled from their own repos)
 /plugin install metronome@claude-workflow
@@ -106,6 +108,7 @@ Always reload after installing, updating, or switching plugins within the same s
 | `commit-guard` | behavior-control | PreToolUse hook that intercepts every `git commit`, shows staged files + message for user approval; GPG signing preserved |
 | `gh-issue-to-pr` | workflow-orchestration | Agent that drives a single GitHub issue end-to-end to a merged PR — investigate, plan, branch, implement, test, commit (with confirmation), PR, review, merge, close |
 | `memory-guard` | behavior-control | SessionStart + PostToolUse hooks that watch `.claude/**`, root `CLAUDE.md`, and `docs/ticket-tracking/**` for changes, save them to memory, then remove or stash them per a one-time, per-project preference |
+| `opencode-migrate` | workflow-orchestration | Skill that migrates a Claude Code setup into opencode — global config, one repository, or a Claude Code plugin's own source — behind a plan-then-approve gate |
 | `skills` ([skills-md](https://github.com/jcchikikomori/skills-md)) | language/framework rules | Technology-specific coding standards — Ruby, Python, React, Node.js, Docker, etc. |
 
 The `dev` and `qa` plugins cover **workflow orchestration** — how to plan, build, and verify software using AI agents. The `skills` plugin (from the separate `skills-md` repo) covers **language and framework rules** — what good code looks like in a given technology. They complement each other and can be installed together.
@@ -283,6 +286,7 @@ plugin-markdown-format/           # markdown-format plugin — auto-fix markdown
 plugin-commit-guard/              # commit-guard plugin — user approval gate before every git commit
 plugin-gh-issue-to-pr/            # gh-issue-to-pr plugin — GitHub issue-to-merged-PR agent
 plugin-memory-guard/              # memory-guard plugin — watch .claude/**, save to memory, offer stash
+plugin-opencode-migrate/          # opencode-migrate plugin — Claude Code -> opencode migration skill
 ```
 
 Each plugin owns its agents and skills directly — no shared root directories, no symlinks. To update an agent or skill, edit it in the plugin directory where it belongs (`plugin-dev/agents/`, `plugin-qa/skills/`, etc.).

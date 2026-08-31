@@ -103,6 +103,12 @@
       "category": "behavior-control"
     },
     {
+      "name": "opencode-migrate",
+      "source": "./plugin-opencode-migrate",
+      "description": "Migrates a Claude Code setup into opencode — global config, a single repository, or a Claude Code plugin's own source — behind a plan-then-approve gate",
+      "category": "workflow-orchestration"
+    },
+    {
       "name": "wandavision",
       "source": "./plugin-wandavision",
       "description": "Bundles the mcp-vision MCP server and enforces deterministic, pixel-accurate reads of every image instead of LLM guesswork",

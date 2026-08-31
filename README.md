@@ -116,16 +116,18 @@ For fullstack projects:
 
 ## OpenCode
 
-Five plugins also ship OpenCode-compatible sources — TypeScript hooks in `plugins/`, slash commands in `commands/`, and (for `gh-issue-to-pr`) an agent in `agents/`. Skills are reused as-is because OpenCode reads `.claude/skills/<name>/SKILL.md` natively.
+Seven plugins also ship OpenCode-compatible sources — TypeScript hooks in `plugins/`, slash commands in `commands/`, and (for `gh-issue-to-pr`) an agent in `agents/`. Skills are reused as-is because OpenCode reads `.claude/skills/<name>/SKILL.md` natively.
 
 ### Install on OpenCode
 
 OpenCode loads plugin `.ts` files from `.opencode/plugins/` (project) or `~/.config/opencode/plugins/` (global). Copy the plugin files and add command/agent entries to `opencode.json`:
 
+`./setup-opencode.sh --global` (or `--project <path>`) does this copying for you and records what it installed so `--uninstall` can undo it; `--list` and `--dry-run` show what it would do. The manual recipe below is the same thing by hand.
+
 ```bash
 # Project-local — copy the TypeScript plugin files into .opencode/plugins/
 mkdir -p .opencode/plugins
-cp plugin-{attribution,commit-guard,memory-guard,wandavision}/plugins/*.ts .opencode/plugins/
+cp plugin-{attribution,commit-guard,env-guard,markdown-format,memory-guard,token-saver,wandavision}/plugins/*.ts .opencode/plugins/
 
 # Copy the command markdown files
 mkdir -p .opencode/commands
@@ -164,6 +166,7 @@ For the `wandavision` MCP server, run `/wandavision` after install — it prints
 | `token-saver` | TypeScript hooks (`session.created` + `tool.execute.after`) — compact-reminder + CLAUDE.md/AGENTS.md size guard; `prompt_quality` is surfaced as guidance only (OpenCode has no blocking pre-prompt event) |
 | `gh-issue-to-pr` | `gh-issue-to-pr` subagent + `/gh-issue-to-pr` command |
 | `wandavision` | TypeScript hook (`tool.execute.after`) + `/wandavision` command (MCP via `opencode.json`) |
+| `opencode-migrate` | Claude Code-side skill — it *performs* the migration into OpenCode, so it stays installed in Claude Code rather than being ported |
 
 The remaining Claude Code-only plugins are `dev` and `qa` (subagent definitions in Claude Code's `.md` format, not directly loadable by OpenCode) and the externally maintained `metronome`, `discover`, and `caveman`.
 
@@ -180,6 +183,7 @@ The remaining Claude Code-only plugins are `dev` and `qa` (subagent definitions 
 | `markdown-format` | quality-enforcement | PostToolUse hook that runs `markdownlint-cli2 --fix` on every `.md` write — non-blocking |
 | `commit-guard` | behavior-control | PreToolUse hook that intercepts every `git commit`, shows staged files + message for user approval before the commit runs |
 | `gh-issue-to-pr` | workflow-orchestration | Agent that drives a single GitHub issue end-to-end to a merged PR — investigate, plan, branch, implement, test, commit (with confirmation), PR, review, merge, close |
+| `opencode-migrate` | workflow-orchestration | Skill that migrates a Claude Code setup into [opencode](https://opencode.ai) — global config, one repository, or a Claude Code plugin's own source — behind a plan-then-approve gate |
 | `metronome` | behavior-control | Detects shortcut-taking and nudges Claude to proceed step by step |
 | `discover` | product-quality | Turns feature ideas into evidence-backed PRDs through structured discovery |
 | `caveman` | behavior-control | A plugin that makes agent talk like caveman |
@@ -198,6 +202,9 @@ The `dev` and `qa` plugins cover **workflow orchestration** — how to plan, bui
 
 # GitHub issue-to-PR workflow agent
 /plugin install gh-issue-to-pr@claude-workflow
+
+# Claude Code -> opencode migration
+/plugin install opencode-migrate@claude-workflow
 
 # External add-ons
 /plugin install metronome@claude-workflow
@@ -396,6 +403,14 @@ claude-workflow/
 │   │   └── gh-issue-to-pr.md
 │   ├── skills/
 │   │   └── gh-issue-to-pr/SKILL.md
+│   └── .claude-plugin/
+│       └── plugin.json
+│
+├── plugin-opencode-migrate/      # opencode-migrate plugin — Claude Code -> opencode migration
+│   ├── skills/
+│   │   └── opencode-migrate/
+│   │       ├── SKILL.md          # orchestrator: discover -> plan -> gate -> apply -> verify
+│   │       └── references/       # global.md, project.md, plugin-port.md
 │   └── .claude-plugin/
 │       └── plugin.json
 │
