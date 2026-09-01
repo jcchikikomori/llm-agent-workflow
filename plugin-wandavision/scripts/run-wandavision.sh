@@ -8,4 +8,7 @@ fi
 
 mkdir -p "${PWD}/.wandavision_workspace"
 
-exec docker run -i --rm "${GPU_ARGS[@]}" -v "${PWD}/.wandavision_workspace:/data" mcp-vision
+exec docker run -i --rm "${GPU_ARGS[@]}" \
+  -v "${PWD}/.wandavision_workspace:/data" \
+  -v "${WANDAVISION_HF_CACHE_VOLUME:-wandavision-hf-cache}:/root/.cache/huggingface" \
+  mcp-vision

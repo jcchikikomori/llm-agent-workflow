@@ -43,6 +43,11 @@ Should show `wandavision` connected, not `CONNECTION_CLOSED`. If it's closed, co
 
 ## Version History
 
+### 0.2.1
+
+- Fixed `CONNECTION_CLOSED` on startup — container had no persistent model cache, so every run re-downloaded the HF pipeline weights and blew the MCP handshake timeout
+- Mounted named volume `wandavision-hf-cache` (override via `WANDAVISION_HF_CACHE_VOLUME`) at `/root/.cache/huggingface` in `scripts/run-wandavision.sh`
+
 ### 0.2.0
 
 - Added OpenCode TypeScript port using `tool.execute.after` (`plugins/opencode-wandavision.ts`)
