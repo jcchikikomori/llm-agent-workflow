@@ -25,7 +25,15 @@ docker build -t mcp-vision .
 
 This plugin doesn't vendor or build the third-party image — the wrapper script assumes `mcp-vision:latest` already exists locally.
 
-### 3. Register the MCP server in `opencode.json`
+### 3. Warm the model cache (one-time, per machine)
+
+```bash
+<path-to-plugin-wandavision>/scripts/warm-cache.sh
+```
+
+Pulls `google/owlvit-large-patch14` (~1.7 GB) into the `wandavision-hf-cache` Docker volume. Skipping this doesn't just make the first connect slow — it makes it *fail*: the server builds its pipeline inside the FastMCP lifespan, before `initialize` is answered, so a cold cache keeps the client waiting minutes past its startup timeout. The wrapper refuses to start on a cold cache and prints this command rather than hanging.
+
+### 4. Register the MCP server in `opencode.json`
 
 Add the `wandavision` entry to the `"mcp"` key of your project's `opencode.json` (create it if missing). Point `command` at this plugin's wrapper script:
 
