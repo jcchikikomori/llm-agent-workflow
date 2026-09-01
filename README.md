@@ -167,6 +167,7 @@ For the `wandavision` MCP server, run `/wandavision` after install — it prints
 | `gh-issue-to-pr` | `gh-issue-to-pr` subagent + `/gh-issue-to-pr` command |
 | `wandavision` | TypeScript hook (`tool.execute.after`) + `/wandavision` command (MCP via `opencode.json`) |
 | `opencode-migrate` | Claude Code-side skill — it *performs* the migration into OpenCode, so it stays installed in Claude Code rather than being ported |
+| `mempalace-docker` | Not ported — its MCP wrapper is reached through `${CLAUDE_PLUGIN_ROOT}`, which OpenCode has no equivalent for, and its save hooks are vendored Claude Code hook scripts |
 
 The remaining Claude Code-only plugins are `dev` and `qa` (subagent definitions in Claude Code's `.md` format, not directly loadable by OpenCode) and the externally maintained `metronome`, `discover`, and `caveman`.
 
@@ -184,6 +185,7 @@ The remaining Claude Code-only plugins are `dev` and `qa` (subagent definitions 
 | `commit-guard` | behavior-control | PreToolUse hook that intercepts every `git commit`, shows staged files + message for user approval before the commit runs |
 | `gh-issue-to-pr` | workflow-orchestration | Agent that drives a single GitHub issue end-to-end to a merged PR — investigate, plan, branch, implement, test, commit (with confirmation), PR, review, merge, close |
 | `opencode-migrate` | workflow-orchestration | Skill that migrates a Claude Code setup into [opencode](https://opencode.ai) — global config, one repository, or a Claude Code plugin's own source — behind a plan-then-approve gate |
+| `mempalace-docker` | behavior-control | Runs [MemPalace](https://github.com/MemPalace/mempalace) entirely from Docker — MCP server, CLI, and save hooks. Picks the CUDA image when an NVIDIA GPU is actually usable, keeps one palace in a named volume, mounts the current project, and auto-mines it per project. **Replaces** the official `mempalace` plugin |
 | `metronome` | behavior-control | Detects shortcut-taking and nudges Claude to proceed step by step |
 | `discover` | product-quality | Turns feature ideas into evidence-backed PRDs through structured discovery |
 | `caveman` | behavior-control | A plugin that makes agent talk like caveman |
@@ -205,6 +207,9 @@ The `dev` and `qa` plugins cover **workflow orchestration** — how to plan, bui
 
 # Claude Code -> opencode migration
 /plugin install opencode-migrate@claude-workflow
+
+# Dockerized MemPalace (replaces the official mempalace plugin)
+/plugin install mempalace-docker@claude-workflow
 
 # External add-ons
 /plugin install metronome@claude-workflow
@@ -411,6 +416,25 @@ claude-workflow/
 │   │   └── opencode-migrate/
 │   │       ├── SKILL.md          # orchestrator: discover -> plan -> gate -> apply -> verify
 │   │       └── references/       # global.md, project.md, plugin-port.md
+│   └── .claude-plugin/
+│       └── plugin.json
+│
+├── plugin-mempalace-docker/      # mempalace-docker plugin — Dockerized MemPalace, GPU-aware
+│   ├── .mcp.json                 # mempalace server -> scripts/run-mempalace.sh
+│   ├── NOTICE                    # MIT attribution for vendored MemPalace code
+│   ├── scripts/
+│   │   ├── run-mempalace.sh      # MCP wrapper: image selection + mounts
+│   │   ├── lib/common.sh         # shared GPU detection / mount assembly
+│   │   ├── bin/mempalace         # containerized CLI (HOME stays /data)
+│   │   ├── bin/mempalace-python3 # MEMPAL_PYTHON target for the vendored hooks
+│   │   ├── build-image.sh        # builds mempalace:gpu (upstream ships no GPU tag)
+│   │   ├── migrate-host-palace.sh# split-palace consolidation, backup-first
+│   │   └── mark_mined.py         # per-project mine stamp
+│   ├── hooks/
+│   │   ├── session_start_hook.py # conflict scan + auto-mine prompt
+│   │   └── vendor/               # MemPalace's own hooks, byte-identical
+│   ├── skills/
+│   │   └── mempalace-docker/SKILL.md
 │   └── .claude-plugin/
 │       └── plugin.json
 │

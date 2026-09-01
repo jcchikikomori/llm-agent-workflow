@@ -1,0 +1,7 @@
+{
+  "mempalace": {
+    "command": "${CLAUDE_PLUGIN_ROOT}/scripts/run-mempalace.sh",
+    "args": [],
+    "env": {}
+  }
+}

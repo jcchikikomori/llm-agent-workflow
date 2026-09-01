@@ -1,0 +1,14 @@
+{
+  "name": "mempalace-docker",
+  "version": "0.1.0",
+  "description": "Runs MemPalace entirely from Docker — auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one shared palace in a named volume, mounts the current project, and auto-mines it per project",
+  "author": {
+    "name": "John Cyrill Corsanes",
+    "url": "https://github.com/jcchikikomori"
+  },
+  "homepage": "https://github.com/jcchikikomori/claude-workflow",
+  "repository": "https://github.com/jcchikikomori/claude-workflow.git",
+  "license": "MIT",
+  "keywords": ["memory", "mcp", "docker", "gpu", "cuda", "mempalace", "hooks"],
+  "skills": ["./skills/mempalace-docker"]
+}

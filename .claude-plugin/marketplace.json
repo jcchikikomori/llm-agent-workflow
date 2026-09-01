@@ -113,6 +113,12 @@
       "source": "./plugin-wandavision",
       "description": "Bundles the mcp-vision MCP server and enforces deterministic, pixel-accurate reads of every image instead of LLM guesswork",
       "category": "quality-enforcement"
+    },
+    {
+      "name": "mempalace-docker",
+      "source": "./plugin-mempalace-docker",
+      "description": "Runs MemPalace from Docker — auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one shared palace in a named volume, mounts the current project, and auto-mines it per project",
+      "category": "behavior-control"
     }
   ]
 }

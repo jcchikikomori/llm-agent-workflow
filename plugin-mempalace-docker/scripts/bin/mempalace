@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Containerized `mempalace` CLI.
+#
+# Named exactly `mempalace` (no extension) so the vendored upstream hooks
+# find it via `command -v mempalace` once this directory is prepended to
+# PATH. Replaces the hand-rolled ~/.local/bin/mempalace shim.
+#
+# Difference that matters: this does NOT pass `--palace $HOME/...` and does
+# NOT set HOME to the host home. HOME stays /data inside the image, so the
+# palace lives in the named volume -- the same palace the MCP server uses.
+set -euo pipefail
+
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+
+mp_select_image
+mp_add_mounts
+
+# `cli` is the entrypoint's dispatch keyword for CLI passthrough.
+mp_exec_docker run -i --rm "${MP_RUN_ARGS[@]}" "$MP_IMAGE" cli "$@"

@@ -1,0 +1,48 @@
+{
+  "description": "Runs the mempalace MCP server and CLI from Docker with per-machine GPU selection; auto-mines each project, warns about conflicting mempalace installs, and saves conversations via the vendored upstream hooks",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/session_start_hook.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env PATH=\"${CLAUDE_PLUGIN_ROOT}/scripts/bin:$PATH\" MEMPAL_PYTHON=\"${CLAUDE_PLUGIN_ROOT}/scripts/bin/mempalace-python3\" bash \"${CLAUDE_PLUGIN_ROOT}/hooks/vendor/mempal_save_hook.sh\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env PATH=\"${CLAUDE_PLUGIN_ROOT}/scripts/bin:$PATH\" MEMPAL_PYTHON=\"${CLAUDE_PLUGIN_ROOT}/scripts/bin/mempalace-python3\" bash \"${CLAUDE_PLUGIN_ROOT}/hooks/vendor/mempal_precompact_hook.sh\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env PATH=\"${CLAUDE_PLUGIN_ROOT}/scripts/bin:$PATH\" MEMPAL_PYTHON=\"${CLAUDE_PLUGIN_ROOT}/scripts/bin/mempalace-python3\" bash \"${CLAUDE_PLUGIN_ROOT}/hooks/vendor/mempal_session_end_hook.sh\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

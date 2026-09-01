@@ -7,6 +7,7 @@ This is a personal fork of [@shinpr](https://github.com/shinpr)'s [claude-code-w
 - **Upstream:** `https://github.com/shinpr/claude-code-workflows`
 - **This fork:** `https://github.com/jcchikikomori/claude-workflow`
 - **License:** MIT — original copyright by Shinsuke Kagawa is preserved in `LICENSE`
+- **Second MIT upstream:** `plugin-mempalace-docker` vendors code from [MemPalace](https://github.com/MemPalace/mempalace) (MIT, copyright (c) 2026 MemPalace Contributors). Attribution lives in `plugin-mempalace-docker/NOTICE` and is additive — it does not replace the root `LICENSE`.
 
 Upstream changes should be periodically merged in. When rebasing onto a new upstream release, update the plugin versions accordingly (see versioning below).
 
@@ -51,6 +52,7 @@ All three must be kept in sync. Update them together whenever the version change
 - `plugin-gh-issue-to-pr/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 - `plugin-memory-guard/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 - `plugin-opencode-migrate/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
+- `plugin-mempalace-docker/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart (it vendors MemPalace hook scripts but is versioned independently of MemPalace).
 
 ### When to bump versions
 
@@ -82,6 +84,7 @@ This registers the marketplace from the GitHub repo. Claude Code reads `.claude-
 /plugin install gh-issue-to-pr@claude-workflow
 /plugin install memory-guard@claude-workflow
 /plugin install opencode-migrate@claude-workflow
+/plugin install mempalace-docker@claude-workflow
 
 # External add-ons (pulled from their own repos)
 /plugin install metronome@claude-workflow
@@ -109,6 +112,7 @@ Always reload after installing, updating, or switching plugins within the same s
 | `gh-issue-to-pr` | workflow-orchestration | Agent that drives a single GitHub issue end-to-end to a merged PR — investigate, plan, branch, implement, test, commit (with confirmation), PR, review, merge, close |
 | `memory-guard` | behavior-control | SessionStart + PostToolUse hooks that watch `.claude/**`, root `CLAUDE.md`, and `docs/ticket-tracking/**` for changes, save them to memory, then remove or stash them per a one-time, per-project preference |
 | `opencode-migrate` | workflow-orchestration | Skill that migrates a Claude Code setup into opencode — global config, one repository, or a Claude Code plugin's own source — behind a plan-then-approve gate |
+| `mempalace-docker` | behavior-control | Runs MemPalace entirely from Docker — MCP server, CLI, and save hooks. Auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one palace in a named volume, mounts the current project, and auto-mines per project. **Replaces** the official `mempalace` plugin |
 | `skills` ([skills-md](https://github.com/jcchikikomori/skills-md)) | language/framework rules | Technology-specific coding standards — Ruby, Python, React, Node.js, Docker, etc. |
 
 The `dev` and `qa` plugins cover **workflow orchestration** — how to plan, build, and verify software using AI agents. The `skills` plugin (from the separate `skills-md` repo) covers **language and framework rules** — what good code looks like in a given technology. They complement each other and can be installed together.
@@ -158,6 +162,26 @@ The `dev` and `qa` plugins cover **workflow orchestration** — how to plan, bui
 - A per-session state file under `~/.claude/.memory-guard/` debounces repeat prompts for the same path within a session; a separate per-project preference file under `~/.claude/.memory-guard/project-prefs/` is what makes the remove/stash choice one-time rather than per-session.
 
 **Configuration:** Watched paths are editable in `plugin-memory-guard/config/watched-paths.json`.
+
+---
+
+### mempalace-docker plugin
+
+**Purpose:** Runs MemPalace entirely from Docker — MCP server, CLI, and save hooks — with per-machine GPU selection, one shared palace, and per-project auto-mining. **Replaces** the official `mempalace` plugin; do not run both.
+
+**How it works:**
+
+- `.mcp.json` points at `scripts/run-mempalace.sh` (`.mcp.json` cannot hold shell logic). The wrapper picks the image at launch: an explicit `MEMPALACE_DOCKER_IMAGE`, else a locally built `mempalace:gpu` with `--runtime=nvidia --gpus all` when NVIDIA is usable, else `ghcr.io/mempalace/mempalace:latest`. Every fallback logs its reason to **stderr** — stdout is JSON-RPC.
+- **Upstream publishes CPU tags only.** There is no `gpu`/`cuda`/`rocm` tag on GHCR, so `scripts/build-image.sh gpu` builds the CUDA variant from `Dockerfile.gpu` (x86_64-only; `onnxruntime-gpu` has no aarch64 Linux wheels).
+- **AMD detection explains, it does not accelerate.** `rocm-smi` / `rocminfo` / `/dev/kfd` / `/opt/rocm` / `lspci` vendor `1002` (the last one catches integrated APUs). On a hit it logs that upstream ships no ROCm image and runs CPU. No `Dockerfile.rocm` is shipped.
+- **Mounts:** volume `mempalace-data` at `/data`, the current project at `/work:ro`, `~/.claude/projects` at `/transcripts:ro`, plus `~/.claude` and `$PWD` at their *identical* host paths. That last pair exists because the vendored hooks hand the CLI real host paths, while `HOME` stays `/data` so the palace stays in the volume. Decoupling path resolution from `HOME` is what fixes the split-brain palace.
+- **Auto-mine:** a `SessionStart` hook checks a per-project stamp under `~/.claude/.mempalace-docker/projects/` (keyed by `sha256(project_root)[:16]`, holding `head_sha` + `last_mined`) and asks Claude to mine `/work` when the project is unmined, `HEAD` has moved, or the stamp exceeds `MEMPALACE_MINE_MAX_AGE_DAYS` (default 7). The skill adds the lazy half — an empty project search triggers a mine, then one retry.
+- **Conflict scan:** the same hook reports the official plugin, a `mcpServers.mempalace` entry in `~/.claude.json`, `~/.local/bin/mempalace{,-python3}` shims, and stale mempalace hook entries in `settings.json` / `settings.local.json`. It reports; it never edits settings. Silence with `touch ~/.claude/.mempalace-docker/conflicts-dismissed`.
+- **Save hooks:** `Stop` / `PreCompact` / `SessionEnd` run MemPalace's own scripts, vendored **byte-identical** under `hooks/vendor/` and redirected purely via the `MEMPAL_PYTHON` and `PATH` overrides those scripts already support. Keeping them unmodified makes `diff` against upstream a clean equality check — so provenance lives in `NOTICE` and `hooks/vendor/README.md`, not in prepended headers.
+
+**Consolidating a split palace:** `scripts/migrate-host-palace.sh` reports `mempalace status` for both palaces first, backs the volume up to `~/.mempalace-backups/`, then either `--strategy remine` (default, additive) or `--strategy replace`. It never deletes `~/.mempalace`. Re-mining rather than merging is forced by upstream: the CLI has no export/import/merge verb, and a Chroma collection plus `knowledge_graph.sqlite3` does not union by copying files.
+
+**Attribution:** vendors MIT code from MemPalace — see `plugin-mempalace-docker/NOTICE`.
 
 ---
 
@@ -287,6 +311,7 @@ plugin-commit-guard/              # commit-guard plugin — user approval gate b
 plugin-gh-issue-to-pr/            # gh-issue-to-pr plugin — GitHub issue-to-merged-PR agent
 plugin-memory-guard/              # memory-guard plugin — watch .claude/**, save to memory, offer stash
 plugin-opencode-migrate/          # opencode-migrate plugin — Claude Code -> opencode migration skill
+plugin-mempalace-docker/          # mempalace-docker plugin — Dockerized MemPalace MCP + CLI + save hooks, GPU-aware
 ```
 
 Each plugin owns its agents and skills directly — no shared root directories, no symlinks. To update an agent or skill, edit it in the plugin directory where it belongs (`plugin-dev/agents/`, `plugin-qa/skills/`, etc.).

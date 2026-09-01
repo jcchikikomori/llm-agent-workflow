@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Containerized python3 with the mempalace package importable.
+#
+# This is the MEMPAL_PYTHON target for the vendored upstream hooks, which call
+# `python3 -m mempalace.hook_shell parse-stop` and friends to parse hook JSON
+# off stdin. Overriding the entrypoint gives them a real interpreter rather
+# than the CLI dispatcher.
+#
+# STDIN IS NOT ALWAYS ATTACHED, and that is deliberate.
+#
+# `docker run -i` streams the host's stdin into the container and drains it,
+# whether or not the container ever reads it. The save and precompact hooks
+# probe `hooks.auto_save` with a `python3 -c ...` call BEFORE they run
+# `INPUT=$(cat)` -- so attaching stdin to that probe swallows the hook payload
+# and the hook then logs "Session unknown" with an empty INPUT. Took a bash -x
+# run to see it, because nothing errors.
+#
+# Rule: `-c` (inline code) never reads stdin in any of the vendored call sites,
+# so it runs detached from stdin. Everything else (`-m ...`) gets `-i`.
+# Verified against every MEMPAL_PYTHON call site in hooks/vendor/ --
+# re-check it when refreshing those scripts.
+set -euo pipefail
+
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+
+mp_select_image
+mp_add_mounts
+
+if [ "${1:-}" = "-c" ]; then
+    mp_exec_docker run --rm "${MP_RUN_ARGS[@]}" \
+        --entrypoint /app/.venv/bin/python3 "$MP_IMAGE" "$@" </dev/null
+else
+    mp_exec_docker run -i --rm "${MP_RUN_ARGS[@]}" \
+        --entrypoint /app/.venv/bin/python3 "$MP_IMAGE" "$@"
+fi
