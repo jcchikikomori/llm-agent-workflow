@@ -1,4 +1,4 @@
-# Claude Code Workflows
+# My LLM Agent Workflow
 
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Plugin-purple)](https://claude.ai/code)
 [![GitHub Stars](https://img.shields.io/github/stars/jcchikikomori/claude-workflow?style=social)](https://github.com/jcchikikomori/claude-workflow)
@@ -18,7 +18,9 @@ A personal fork of [@shinpr](https://github.com/shinpr)'s [claude-code-workflows
 | macOS | Supported |
 | Linux | Supported |
 | WSL (Windows) | Supported |
-| Native Windows | Supported |
+| Native Windows | N/A |
+| Termux | N/A |
+| Android | N/A |
 
 Plugin files are copied directly — no symlinks. Full compatibility across all platforms.
 
@@ -91,15 +93,18 @@ Merge these into your existing `permissions.allow` array — do not replace it.
 # 1. Start Claude Code
 claude
 
-# 2. Install the marketplace
-/plugin marketplace add jcchikikomori/claude-workflow
+# 2. On a separate terminal, clone the repo and add it as a local marketplace
+git clone https://github.com/jcchikikomori/claude-workflow <install-path>
 
-# 3. Install plugins
+# Now, going back to the Claude Code
+/plugin marketplace add <install-path>
+
+# 3. Install some plugins
 /plugin install dev@claude-workflow
-/plugin install qa@claude-workflow           # optional: QA workflows
-/plugin install env-guard@claude-workflow    # optional: secrets protection
+/plugin install qa@claude-workflow
+/plugin install env-guard@claude-workflow
 
-# 4. Reload plugins
+# 4. Reload plugins after installation
 /reload-plugins
 
 # 5. Start building
@@ -112,64 +117,24 @@ For fullstack projects:
 /recipe-fullstack-implement "Add user authentication with JWT + login form"
 ```
 
----
+### Wandavision Setup
 
-## OpenCode
+For `wandavision`, follow the initial steps below:
 
-Seven plugins also ship OpenCode-compatible sources — TypeScript hooks in `plugins/`, slash commands in `commands/`, and (for `gh-issue-to-pr`) an agent in `agents/`. Skills are reused as-is because OpenCode reads `.claude/skills/<name>/SKILL.md` natively.
+1. `./setup-wandavision.sh` from the repo root copies `wandavision/{bin,skill,opencode-plugin}/` into the XDG location. Idempotent.
+2. Add the `wandavision` MCP entry to `opencode.json` pointing at the XDG wrapper:
 
-### Install on OpenCode
+   ```json
+   "mcp": {
+     "wandavision": {
+       "type": "local",
+       "command": ["{env:HOME}/.local/share/com.jcchikikomori.llmworkflow/wandavision/bin/run-wandavision.sh"],
+       "enabled": true
+     }
+   }
+   ```
 
-OpenCode loads plugin `.ts` files from `.opencode/plugins/` (project) or `~/.config/opencode/plugins/` (global). Copy the plugin files and add command/agent entries to `opencode.json`:
-
-`./setup-opencode.sh --global` (or `--project <path>`) does this copying for you and records what it installed so `--uninstall` can undo it; `--list` and `--dry-run` show what it would do. The manual recipe below is the same thing by hand.
-
-```bash
-# Project-local — copy the TypeScript plugin files into .opencode/plugins/
-mkdir -p .opencode/plugins
-cp plugin-{attribution,commit-guard,env-guard,markdown-format,memory-guard,token-saver,wandavision}/plugins/*.ts .opencode/plugins/
-
-# Copy the command markdown files
-mkdir -p .opencode/commands
-cp plugin-{attribution,commit-guard,memory-guard,gh-issue-to-pr,wandavision}/commands/*.md .opencode/commands/
-
-# (gh-issue-to-pr only) — copy the OpenCode agent
-mkdir -p .opencode/agents
-cp plugin-gh-issue-to-pr/agents/opencode-gh-issue-to-pr.md .opencode/agents/
-```
-
-Then add the `gh-issue-to-pr` agent to your `opencode.json`:
-
-```json
-{
-  "agent": {
-    "gh-issue-to-pr": {
-      "description": "Drives a single GitHub issue end-to-end to a merged PR",
-      "mode": "subagent",
-      "permission": { "edit": "allow", "bash": "allow", "webfetch": "allow" }
-    }
-  }
-}
-```
-
-For the `wandavision` MCP server, run `/wandavision` after install — it prints the exact `docker build` and `opencode.json` `"mcp"` block to add (the MCP is the [jcchikikomori/mcp-vision fork](https://github.com/jcchikikomori/mcp-vision), not upstream).
-
-### OpenCode compatibility
-
-| Plugin | OpenCode support |
-| ------ | ----------------- |
-| `claude-attribution` | TypeScript hook (`tool.execute.before`) + `/claude-attribution` command |
-| `commit-guard` | TypeScript hook with SHA256 approval + `/commit-guard` command |
-| `env-guard` | TypeScript hook (`tool.execute.before`) — blocks `.env`/credential reads and secret-leaking bash; throws to block, mirrors the Claude Code PreToolUse hook |
-| `markdown-format` | TypeScript hook (`tool.execute.after`) — runs `markdownlint-cli2 --fix` on `.md` writes (global binary → `npx` fallback), never throws |
-| `memory-guard` | TypeScript hooks (`session.created` + `file.edited`) + cross-platform Python scripts + `/memory-guard` command |
-| `token-saver` | TypeScript hooks (`session.created` + `tool.execute.after`) — compact-reminder + CLAUDE.md/AGENTS.md size guard; `prompt_quality` is surfaced as guidance only (OpenCode has no blocking pre-prompt event) |
-| `gh-issue-to-pr` | `gh-issue-to-pr` subagent + `/gh-issue-to-pr` command |
-| `wandavision` | TypeScript hook (`tool.execute.after`) + `/wandavision` command (MCP via `opencode.json`) |
-| `opencode-migrate` | Claude Code-side skill — it *performs* the migration into OpenCode, so it stays installed in Claude Code rather than being ported |
-| `mempalace-docker` | Not ported — its MCP wrapper is reached through `${CLAUDE_PLUGIN_ROOT}`, which OpenCode has no equivalent for, and its save hooks are vendored Claude Code hook scripts |
-
-The remaining Claude Code-only plugins are `dev` and `qa` (subagent definitions in Claude Code's `.md` format, not directly loadable by OpenCode) and the externally maintained `metronome`, `discover`, and `caveman`.
+The reminder hook is copied into `.opencode/plugins/` by the line above; the slash command `/wandavision` is owned by the dotfiles project (or you can copy `wandavision/skill/wandavision/SKILL.md`'s command-file equivalent manually). See `~/.local/share/com.jcchikikomori.llmworkflow/wandavision/dotfiles-migration.md` for the keep-in-sync procedure.
 
 ---
 
@@ -189,35 +154,9 @@ The remaining Claude Code-only plugins are `dev` and `qa` (subagent definitions 
 | `metronome` | behavior-control | Detects shortcut-taking and nudges Claude to proceed step by step |
 | `discover` | product-quality | Turns feature ideas into evidence-backed PRDs through structured discovery |
 | `caveman` | behavior-control | A plugin that makes agent talk like caveman |
+| `wandavision` | quality-enforcement | Bundles the `mcp-vision` MCP server and enforces deterministic, pixel-accurate reads of every image instead of LLM guesswork |
 
-The `dev` and `qa` plugins cover **workflow orchestration** — how to plan, build, and verify software using AI agents. Install the `skills` plugin from [skills-md](https://github.com/jcchikikomori/skills-md) for language/framework-specific rules (Ruby, Python, React, Node.js, Docker, etc.).
-
-```bash
-# Governance
-/plugin install claude-attribution@claude-workflow
-
-# Markdown auto-formatting
-/plugin install markdown-format@claude-workflow
-
-# Commit approval gate
-/plugin install commit-guard@claude-workflow
-
-# GitHub issue-to-PR workflow agent
-/plugin install gh-issue-to-pr@claude-workflow
-
-# Claude Code -> opencode migration
-/plugin install opencode-migrate@claude-workflow
-
-# Dockerized MemPalace (replaces the official mempalace plugin)
-/plugin install mempalace-docker@claude-workflow
-
-# External add-ons
-/plugin install metronome@claude-workflow
-/plugin install discover@claude-workflow
-
-# Language/framework rules (from separate repo)
-/plugin install skills@claude-workflow
-```
+The `dev` and `qa` plugins cover **workflow orchestration** — how to plan, build, and verify software using AI agents. Install the `skills` plugin from [skills-md](https://github.com/jcchikikomori/skills-md) for language/framework-specific rules (Ruby, Python, React, Node.js, Docker, etc.).s
 
 ---
 
@@ -446,120 +385,48 @@ Each plugin owns its agents and skills directly — no shared root directories, 
 
 ---
 
-## env-guard
+## OpenCode
 
-`env-guard` prevents Claude from reading or leaking sensitive credential files (`.env`, SSH keys, cloud credentials, tokens). It works via a **PreToolUse hook** — the block happens before any tool call executes and cannot be overridden by prompt instructions.
+Seven plugins also ship OpenCode-compatible sources — TypeScript hooks in `plugins/`, slash commands in `commands/`, and (for `gh-issue-to-pr`) an agent in `agents/`. Skills are reused as-is because OpenCode reads `.claude/skills/<name>/SKILL.md` natively.
 
-It also ships a `secret-exposure-auditor` agent. Ask Claude to "audit for secrets" to scan a project for hardcoded keys, committed `.env` files, and `.gitignore` gaps.
+### Install on OpenCode
 
-```bash
-/plugin install env-guard@claude-workflow
-```
+OpenCode loads plugin `.ts` files from `.opencode/plugins/` (project) or `~/.config/opencode/plugins/` (global). Copy the plugin files and add command/agent entries to `opencode.json`:
 
----
-
-## claude-attribution
-
-`claude-attribution` ensures every external post carries a visible AI-authorship line: **🤖 Written by Claude, reviewed by \<name\>**. It works with any MCP-connected platform — GitHub, JIRA, Confluence, Slack, or anything added later.
-
-### How it works
-
-- A **PreToolUse hook** matches `mcp__.*|Bash` — all MCP tools and CLI commands
-- The hook scans `tool_input` for body-like fields (`body`, `content`, `message`, `comment`, `commentBody`, `description`, `text`)
-- Posts missing the attribution line are **blocked before they are sent**
-- A companion skill instructs Claude to **show the post to the user for approval** before sending
-
-### Setup
+`./setup-opencode.sh --global` (or `--project <path>`) does this copying for you and records what it installed so `--uninstall` can undo it; `--list` and `--dry-run` show what it would do. The manual recipe below is the same thing by hand.
 
 ```bash
-/plugin install claude-attribution@claude-workflow
+# Project-local — copy the TypeScript plugin files into .opencode/plugins/
+mkdir -p .opencode/plugins
+cp plugin-{attribution,commit-guard,env-guard,markdown-format,memory-guard,token-saver}/plugins/*.ts .opencode/plugins/
+cp wandavision/opencode-plugin/*.ts .opencode/plugins/
 
-# Set your name (prompted on first use, or set manually)
-echo "Your Name" > ~/.claude/claude-attribution-name.txt
+# Copy the command markdown files
+mkdir -p .opencode/commands
+cp plugin-{attribution,commit-guard,memory-guard,gh-issue-to-pr}/commands/*.md .opencode/commands/
 ```
 
-### CLI coverage
-
-The hook intercepts these Bash patterns:
-
-| Pattern | Example |
-| --------- | --------- |
-| `gh pr create/comment/review/edit` | `gh pr comment 42 --body "..."` |
-| `gh issue create/comment/edit` | `gh issue comment 1 --body "..."` |
-| `gh api` with body field | `gh api repos/o/r/issues/1/comments -f body=...` |
-| `curl` POST/PUT/PATCH | `curl -X POST -d '...'` |
-
-> **Important:** Always include the attribution text **inline** in the body string. Do not use shell variable expansion (e.g., `${ATTR}`) to inject the attribution — the hook inspects raw command text before shell expansion.
-
----
-
-## markdown-format
-
-`markdown-format` silently fixes markdown lint errors in every `.md` file Claude writes or edits.
-It works via a **PostToolUse hook** — `markdownlint-cli2 --fix` runs after each write and is
-completely non-blocking. The companion skill also teaches Claude to write clean markdown from
-the start.
-
-### How it works
-
-- A **PostToolUse hook** fires on `Write`, `Edit`, and `MultiEdit` for `.md` files
-- Runs `markdownlint-cli2 --fix` with a bundled config tuned for LLM-generated markdown
-- Accepts exit codes 0 and 1 (unfixable violations) as success — writes are never blocked
-- Tries a globally installed `markdownlint-cli2` binary first; falls back to `npx markdownlint-cli2`
-
-### Bundled config
-
-| Rule | Setting | Reason |
-| ---- | ------- | ------ |
-| MD013 | disabled | LLMs don't wrap at 80 chars — enforcing creates noisy diffs |
-| MD041 | disabled | Fragments and skill files legitimately lack a leading H1 |
-| MD033 | disabled | Claude emits valid HTML (badges, `<details>`, table cells) |
-| MD024 | `siblings_only` | Same-name headings allowed under different parents |
-
-### Setup
+#### Installing custom agents (e.g. gh-issue-to-pr)
 
 ```bash
-/plugin install markdown-format@claude-workflow
-
-# Optional: install globally to skip npx download overhead on first run
-npm install -g markdownlint-cli2
+# (gh-issue-to-pr only) — copy the OpenCode agent
+mkdir -p .opencode/agents
+cp plugin-gh-issue-to-pr/agents/opencode-gh-issue-to-pr.md .opencode/agents/
 ```
 
-To override rules for a specific project, place a `.markdownlint.json` in the project root —
-`markdownlint-cli2` picks it up automatically and the bundled config is not applied.
+Then add the `gh-issue-to-pr` agent to your `opencode.json`:
 
----
-
-## gh-issue-to-pr
-
-`gh-issue-to-pr` ships a single agent that drives one GitHub issue from "reported" to "merged
-and closed," in small, reversible steps, stopping hard at anything shared-state or
-hard-to-reverse.
-
-### Phases
-
-Investigate to Plan to Branch (git-flow aware) to Scout for reusable code to Implement to Test
-locally to Stage to draft a commit message and **stop** to (once pushed) open the PR to
-self-review the diff to update the Test Plan checklist to merge (with confirmation) to close
-the issue (with confirmation).
-
-It always reads the target repo's own `CLAUDE.md`/`AGENTS.md`/`CONTRIBUTING.md` first and
-defers to those conventions over its own defaults — it's portable across repos.
-
-### Hard rules
-
-- Never runs `git commit`, `git push`, `gh pr merge`, or `gh issue close` without the user
-  explicitly approving that specific action in that turn
-- Never force-pushes, never `--no-verify`, never skips hooks
-
-### Setup
-
-```bash
-/plugin install gh-issue-to-pr@claude-workflow
+```json
+{
+  "agent": {
+    "gh-issue-to-pr": {
+      "description": "Drives a single GitHub issue end-to-end to a merged PR",
+      "mode": "subagent",
+      "permission": { "edit": "allow", "bash": "allow", "webfetch": "allow" }
+    }
+  }
+}
 ```
-
-Trigger with `/gh-issue-to-pr #42`, or natural language: "pick up issue #42", "work ticket #17
-end to end", or resume mid-flow with "I've pushed, open the PR" / "checks are green, merge it".
 
 ---
 

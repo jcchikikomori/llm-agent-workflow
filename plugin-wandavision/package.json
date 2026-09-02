@@ -1,7 +1,7 @@
 {
   "name": "opencode-wandavision",
-  "version": "0.2.0",
-  "description": "Bundles the mcp-vision MCP server and enforces deterministic, pixel-accurate reads of every image — user-submitted or tool-generated — instead of LLM guesswork",
+  "version": "0.4.0",
+  "description": "Bundles the mcp-vision MCP server and enforces deterministic, pixel-accurate reads of every image — user-submitted or tool-generated — instead of LLM guesswork. This marketplace plugin is a thin shim; the actual runtime files live in the XDG data directory shared with OpenCode.",
   "type": "module",
   "author": {
     "name": "John Cyrill Corsanes",

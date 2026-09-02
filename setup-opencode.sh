@@ -104,7 +104,21 @@ discover_plugins() {
         printf '%s\n' "${name}|agents|${f}"
       done
     fi
-  done | sort -u
+  done
+
+  # Top-level wandavision/ holds the source-of-truth for OpenCode files.
+  # `plugin-wandavision/` is a Claude Code marketplace shim — it no longer
+  # ships `plugins/` or `commands/`, so we scan the standalone dir instead.
+  local wandavision_root="$REPO_ROOT/wandavision"
+  if [[ -d "$wandavision_root" ]]; then
+    plugins_dir="$wandavision_root/opencode-plugin"
+    if [[ -d "$plugins_dir" ]]; then
+      for f in "$plugins_dir"/*.ts; do
+        [[ -f "$f" ]] || continue
+        printf '%s\n' "wandavision|plugins|${f}"
+      done
+    fi
+  fi
 }
 
 plugin_selected() {
@@ -138,7 +152,7 @@ done
 # --- Pre-flight --------------------------------------------------------------
 REPO_ROOT="$(find_repo_root)"
 [[ -d "$REPO_ROOT" ]] || die "Repo root not found"
-DISCOVERED="$(discover_plugins)"
+DISCOVERED="$(discover_plugins | sort -u)"
 
 # --- --list ------------------------------------------------------------------
 if [[ "$ACTION" == "list" ]]; then
@@ -330,8 +344,28 @@ fi
 
 if plugin_in_scope "wandavision" && [[ "$DRY_RUN" -ne 1 ]]; then
   hdr "wandavision follow-up"
-  dim "Run /wandavision after install — it prints the docker build command"
-  dim "and the opencode.json mcp block to add for the mcp-vision server."
+  dim "The reminder hook is now copied to plugins/, but the MCP wrapper still"
+  dim "needs to be installed into the XDG data directory. Two steps:"
+  dim ""
+  dim "  1. ./setup-wandavision.sh   # copies wandavision/{bin,skill,opencode-plugin}/ ->"
+  dim "                    #   ~/.local/share/com.jcchikikomori.llmworkflow/wandavision/"
+  dim ""
+  dim "  2. Add this MCP entry to opencode.json:"
+  cat <<'EOF'
+{
+  "mcp": {
+    "wandavision": {
+      "type": "local",
+      "command": ["{env:HOME}/.local/share/com.jcchikikomori.llmworkflow/wandavision/bin/run-wandavision.sh"],
+      "enabled": true
+    }
+  }
+}
+EOF
+  dim ""
+  dim "The /wandavision slash command lives in the dotfiles project (or copy"
+  dim "wandavision/skill/wandavision/SKILL.md's command-file equivalent into"
+  dim "~/.config/opencode/commands/ yourself). See plugin-wandavision/README.md."
 fi
 
 log ""
