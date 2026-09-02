@@ -1,13 +1,13 @@
 {
   "name": "commit-guard",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "Asks user for approval before every git commit; preserves GPG signing and pinentry passphrase flow",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"
   },
-  "homepage": "https://github.com/jcchikikomori/claude-workflow",
-  "repository": "https://github.com/jcchikikomori/claude-workflow.git",
+  "homepage": "https://github.com/jcchikikomori/llm-agent-workflow",
+  "repository": "https://github.com/jcchikikomori/llm-agent-workflow.git",
   "license": "MIT",
   "keywords": ["git", "commit", "guard", "approval", "gpg", "hooks", "behavior-control"],
   "skills": [

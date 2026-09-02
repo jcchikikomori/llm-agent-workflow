@@ -43,7 +43,7 @@ repos, not tied to this one.
 ## Install
 
 ```bash
-/plugin install gh-issue-to-pr@claude-workflow
+/plugin install gh-issue-to-pr@llm-agent-workflow
 /reload-plugins
 ```
 
@@ -68,6 +68,13 @@ Mid-flow resumption works too — e.g. "I've pushed, open the PR" or "checks are
 it." (also via `/gh-issue-to-pr I've pushed, open the PR`).
 
 ## Changelog
+
+### 1.0.0
+
+Major release for repository rename to `llm-agent-workflow`.
+
+- Updated install target to `gh-issue-to-pr@llm-agent-workflow`.
+- No behavior changes to the issue-to-PR workflow.
 
 ### 0.3.0
 

@@ -106,7 +106,7 @@ See `hooks/vendor/README.md`.
 ### 1. Install
 
 ```bash
-/plugin install mempalace-docker@claude-workflow
+/plugin install mempalace-docker@llm-agent-workflow
 /reload-plugins
 ```
 
@@ -206,6 +206,12 @@ MemPalace Contributors. Full attribution, vendored-file list, source commit,
 and upstream license text are in [`NOTICE`](./NOTICE).
 
 ## Version History
+
+### 1.0.0
+
+- Major release for repository rename to `llm-agent-workflow`
+- Updated install target to `mempalace-docker@llm-agent-workflow`
+- No runtime or hook behavior changes
 
 ### 0.1.0
 

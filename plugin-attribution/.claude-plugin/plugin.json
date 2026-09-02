@@ -1,13 +1,13 @@
 {
   "name": "claude-attribution",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "Appends '🤖 Written by Claude, reviewed by <user>' attribution to all external posts — GitHub, JIRA, Slack, and any MCP-connected platform",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"
   },
-  "homepage": "https://github.com/jcchikikomori/claude-workflow",
-  "repository": "https://github.com/jcchikikomori/claude-workflow.git",
+  "homepage": "https://github.com/jcchikikomori/llm-agent-workflow",
+  "repository": "https://github.com/jcchikikomori/llm-agent-workflow.git",
   "license": "MIT",
   "keywords": [
     "attribution",

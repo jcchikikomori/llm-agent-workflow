@@ -35,7 +35,7 @@ Conservatively, on purpose. A `deny` always survives; anything ambiguous becomes
 ## Install
 
 ```bash
-/plugin install opencode-migrate@claude-workflow
+/plugin install opencode-migrate@llm-agent-workflow
 /reload-plugins
 ```
 
@@ -46,6 +46,12 @@ Conservatively, on purpose. A `deny` always survives; anything ambiguous becomes
 Step 0 of the skill checks for the skills-md copy and prints a one-line reminder when it finds one. It does not block. Disable the skills-md skill when you are ready, and the reminder stops appearing.
 
 ## Version History
+
+### 1.0.0
+
+- Major release for repository rename to `llm-agent-workflow`
+- Updated install target to `opencode-migrate@llm-agent-workflow`
+- No migration-behavior changes
 
 ### 0.1.0
 

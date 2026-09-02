@@ -58,7 +58,7 @@ Downloads `google/owlvit-large-patch14` (~1.7 GB) into the `wandavision-hf-cache
 ### 4. Install the marketplace plugin (Claude Code users)
 
 ```bash
-/plugin install wandavision@claude-workflow
+/plugin install wandavision@llm-agent-workflow
 /reload-plugins
 ```
 
@@ -133,6 +133,12 @@ docker ps --filter ancestor=mcp-vision -q | xargs -r docker rm -f
 - The XDG install is reusable across Claude Code and OpenCode; both agents reference the same wrapper script and skill body. The dotfiles project holds the OpenCode-side plugin copy; the Claude Code marketplace install holds its own redirector.
 
 ## Version History
+
+### 1.0.0
+
+- Major release for repository rename to `llm-agent-workflow`
+- Updated install target to `wandavision@llm-agent-workflow`
+- No runtime/hook behavior changes
 
 ### 0.4.0
 

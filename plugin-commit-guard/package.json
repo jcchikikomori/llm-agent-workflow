@@ -1,12 +1,12 @@
 {
   "name": "opencode-commit-guard",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "Asks user for approval before every git commit; preserves GPG signing and pinentry passphrase flow",
   "type": "module",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"
   },
-  "homepage": "https://github.com/jcchikikomori/claude-workflow",
+  "homepage": "https://github.com/jcchikikomori/llm-agent-workflow",
   "license": "MIT"
 }

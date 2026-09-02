@@ -1,6 +1,6 @@
 # NOTICE
 
-`mempalace-docker` is part of the `jcchikikomori/claude-workflow` marketplace
+`mempalace-docker` is part of the `jcchikikomori/llm-agent-workflow` marketplace
 and is licensed MIT (see the repository `LICENSE`).
 
 It **vendors** third-party MIT-licensed code from a second upstream project.
@@ -61,7 +61,7 @@ state handling, SessionStart hook, skill, and migration tooling are original.
 
 ## Unrelated upstream
 
-The wider `claude-workflow` repository is a fork of
+The wider `llm-agent-workflow` repository is a fork of
 <https://github.com/shinpr/claude-code-workflows>, MIT, copyright Shinsuke
 Kagawa — preserved in the repository `LICENSE`. That attribution is separate
 from and unaffected by the MemPalace attribution above.

@@ -1,13 +1,13 @@
 {
   "name": "markdown-format",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Auto-formats .md files after Claude writes or edits them using markdownlint-cli2 --fix — silently corrects LLM-generated markdown errors",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"
   },
-  "homepage": "https://github.com/jcchikikomori/claude-workflow",
-  "repository": "https://github.com/jcchikikomori/claude-workflow.git",
+  "homepage": "https://github.com/jcchikikomori/llm-agent-workflow",
+  "repository": "https://github.com/jcchikikomori/llm-agent-workflow.git",
   "license": "MIT",
   "keywords": ["markdown", "formatting", "hooks", "quality", "linting", "auto-fix"],
   "skills": [

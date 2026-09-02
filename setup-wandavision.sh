@@ -15,7 +15,7 @@ DST="${XDG_DATA_HOME:-$HOME/.local/share}/com.jcchikikomori.llmworkflow/wandavis
 
 if [ ! -d "$SRC" ]; then
   printf '[wandavision install] source not found: %s\n' "$SRC" >&2
-  printf '[wandavision install] run this from the claude-workflow repo root.\n' >&2
+  printf '[wandavision install] run this from the llm-agent-workflow repo root.\n' >&2
   exit 1
 fi
 

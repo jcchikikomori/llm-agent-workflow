@@ -2,7 +2,7 @@
 
 Porting spec for plugin authors. Return to `SKILL.md` for the phase flow and the write gate.
 
-Every pattern below is derived from seven completed ports in `jcchikikomori/claude-workflow` — `commit-guard`, `env-guard`, `claude-attribution`, `markdown-format`, `token-saver`, `memory-guard`, `wandavision`. Citations are `file:line` in that repo. When something here disagrees with an existing port, the port wins: it runs, this file does not.
+Every pattern below is derived from seven completed ports in `jcchikikomori/llm-agent-workflow` — `commit-guard`, `env-guard`, `claude-attribution`, `markdown-format`, `token-saver`, `memory-guard`, `wandavision`. Citations are `file:line` in that repo. When something here disagrees with an existing port, the port wins: it runs, this file does not.
 
 ## Contents
 

@@ -1,11 +1,11 @@
-# CLAUDE.md — claude-workflow
+# CLAUDE.md — llm-agent-workflow
 
-This is a personal fork of [@shinpr](https://github.com/shinpr)'s [claude-code-workflows](https://github.com/shinpr/claude-code-workflows), maintained as a custom Claude Code marketplace at `jcchikikomori/claude-workflow`.
+This is a personal fork of [@shinpr](https://github.com/shinpr)'s [claude-code-workflows](https://github.com/shinpr/claude-code-workflows), maintained as a custom Claude Code marketplace at `jcchikikomori/llm-agent-workflow`.
 
 ## Fork Relationship
 
 - **Upstream:** `https://github.com/shinpr/claude-code-workflows`
-- **This fork:** `https://github.com/jcchikikomori/claude-workflow`
+- **This fork:** `https://github.com/jcchikikomori/llm-agent-workflow`
 - **License:** MIT — original copyright by Shinsuke Kagawa is preserved in `LICENSE`
 - **Second MIT upstream:** `plugin-mempalace-docker` vendors code from [MemPalace](https://github.com/MemPalace/mempalace) (MIT, copyright (c) 2026 MemPalace Contributors). Attribution lives in `plugin-mempalace-docker/NOTICE` and is additive — it does not replace the root `LICENSE`.
 
@@ -62,13 +62,21 @@ All three must be kept in sync. Update them together whenever the version change
 
 **After every plugin change**, also update the plugin's `README.md` with a changelog entry describing what changed.
 
+### Rename release note
+
+The repository rename from `claude-workflow` to `llm-agent-workflow` is treated as a SemVer major release baseline:
+
+- Fork-qualified plugins move to `1.0.0-jcc.1`.
+- Independently versioned plugins move to `1.0.0`.
+- This is a one-time exception to the "no version bump for branding-only edits" rule because install coordinates and marketplace identity changed.
+
 ## Using This as a Custom Marketplace
 
 ### Install the marketplace in Claude Code
 
 ```bash
 # Inside a Claude Code session
-/plugin marketplace add jcchikikomori/claude-workflow
+/plugin marketplace add jcchikikomori/llm-agent-workflow
 ```
 
 This registers the marketplace from the GitHub repo. Claude Code reads `.claude-plugin/marketplace.json` to discover available plugins.
@@ -76,19 +84,19 @@ This registers the marketplace from the GitHub repo. Claude Code reads `.claude-
 ### Install a plugin from this marketplace
 
 ```bash
-/plugin install dev@claude-workflow
-/plugin install qa@claude-workflow
-/plugin install env-guard@claude-workflow
-/plugin install claude-attribution@claude-workflow
-/plugin install commit-guard@claude-workflow
-/plugin install gh-issue-to-pr@claude-workflow
-/plugin install memory-guard@claude-workflow
-/plugin install opencode-migrate@claude-workflow
-/plugin install mempalace-docker@claude-workflow
+/plugin install dev@llm-agent-workflow
+/plugin install qa@llm-agent-workflow
+/plugin install env-guard@llm-agent-workflow
+/plugin install claude-attribution@llm-agent-workflow
+/plugin install commit-guard@llm-agent-workflow
+/plugin install gh-issue-to-pr@llm-agent-workflow
+/plugin install memory-guard@llm-agent-workflow
+/plugin install opencode-migrate@llm-agent-workflow
+/plugin install mempalace-docker@llm-agent-workflow
 
 # External add-ons (pulled from their own repos)
-/plugin install metronome@claude-workflow
-/plugin install discover@claude-workflow
+/plugin install metronome@llm-agent-workflow
+/plugin install discover@llm-agent-workflow
 ```
 
 ### Apply changes after install or update
@@ -211,8 +219,8 @@ my-plugin/
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"
   },
-  "homepage": "https://github.com/jcchikikomori/claude-workflow",
-  "repository": "https://github.com/jcchikikomori/claude-workflow.git",
+  "homepage": "https://github.com/jcchikikomori/llm-agent-workflow",
+  "repository": "https://github.com/jcchikikomori/llm-agent-workflow.git",
   "license": "MIT",
   "keywords": ["your", "tags", "here"]
 }

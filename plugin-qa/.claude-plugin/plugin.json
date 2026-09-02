@@ -1,13 +1,13 @@
 {
   "name": "qa",
-  "version": "0.16.14-jcc.12",
+  "version": "1.0.0-jcc.1",
   "description": "Skills + Subagents for QA — covers web, mobile, and integration testing. Run recipe workflows for orchestrated test generation and browser-layer QA, or load skills for targeted testing guidance.",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"
   },
-  "homepage": "https://github.com/jcchikikomori/claude-workflow",
-  "repository": "https://github.com/jcchikikomori/claude-workflow.git",
+  "homepage": "https://github.com/jcchikikomori/llm-agent-workflow",
+  "repository": "https://github.com/jcchikikomori/llm-agent-workflow.git",
   "license": "MIT",
   "keywords": [
     "workflows",

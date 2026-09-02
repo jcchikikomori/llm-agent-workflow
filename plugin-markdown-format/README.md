@@ -30,7 +30,7 @@ Claude to write markdownlint-compliant markdown proactively.
 ## Install
 
 ```bash
-/plugin install markdown-format@claude-workflow
+/plugin install markdown-format@llm-agent-workflow
 /reload-plugins
 ```
 
@@ -55,4 +55,5 @@ it up automatically via its config search and the bundled config is not applied.
 
 | Version | Changes |
 | ------- | ------- |
+| 1.0.0 | Major release for repository rename to `llm-agent-workflow`; updated install target to `markdown-format@llm-agent-workflow`; no behavior changes |
 | 0.1.0 | Initial release — PostToolUse hook + bundled config + markdown-format skill |

@@ -1,13 +1,13 @@
 {
   "name": "wandavision",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "Bundles the mcp-vision MCP server and enforces deterministic, pixel-accurate reads of every image — user-submitted or tool-generated — instead of LLM guesswork. Runtime files (wrapper script, skill body, OpenCode reminder hook) live in the XDG data directory ~/.local/share/com.jcchikikomori.llmworkflow/wandavision/ and are shared with OpenCode; this marketplace plugin is a thin shim.",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"
   },
-  "homepage": "https://github.com/jcchikikomori/claude-workflow",
-  "repository": "https://github.com/jcchikikomori/claude-workflow.git",
+  "homepage": "https://github.com/jcchikikomori/llm-agent-workflow",
+  "repository": "https://github.com/jcchikikomori/llm-agent-workflow.git",
   "license": "MIT",
   "keywords": ["vision", "mcp", "screenshots", "computer-vision", "hooks", "xdg"]
 }

@@ -37,7 +37,7 @@ To add more exempt platforms, extend `NATIVE_ATTRIBUTION_TOOL_PATTERNS` in `hook
 ### 1. Install the plugin
 
 ```bash
-/plugin install claude-attribution@claude-workflow
+/plugin install claude-attribution@llm-agent-workflow
 /reload-plugins
 ```
 
@@ -59,6 +59,12 @@ Before posting to any external platform, Claude will:
 4. Only post after user confirms
 
 ## Version History
+
+### 1.0.0
+
+- Major release for repository rename to `llm-agent-workflow`
+- Updated install target to `claude-attribution@llm-agent-workflow`
+- No behavior changes to attribution enforcement
 
 ### 0.4.0
 

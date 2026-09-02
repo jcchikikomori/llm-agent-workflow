@@ -1,13 +1,13 @@
 {
   "name": "opencode-migrate",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Migrates a Claude Code setup into opencode — global config, per-project config, and Claude Code plugin ports — behind a plan-then-approve gate",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"
   },
-  "homepage": "https://github.com/jcchikikomori/claude-workflow",
-  "repository": "https://github.com/jcchikikomori/claude-workflow.git",
+  "homepage": "https://github.com/jcchikikomori/llm-agent-workflow",
+  "repository": "https://github.com/jcchikikomori/llm-agent-workflow.git",
   "license": "MIT",
   "keywords": [
     "opencode",

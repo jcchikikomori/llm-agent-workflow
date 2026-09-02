@@ -49,7 +49,7 @@ directory pathspec does in `git`.
 ## Install
 
 ```bash
-/plugin install memory-guard@claude-workflow
+/plugin install memory-guard@llm-agent-workflow
 /reload-plugins
 ```
 
@@ -96,6 +96,13 @@ python3 <plugin path>/scripts/reset_preference.py --repo-root /path/to/repo
   delete anyway, the content is gone.
 
 ## Changelog
+
+### 1.0.0
+
+Major release for repository rename to `llm-agent-workflow`.
+
+- Updated install target to `memory-guard@llm-agent-workflow`.
+- No behavior changes to watch/snapshot/remove-or-stash flow.
 
 ### 0.3.0
 

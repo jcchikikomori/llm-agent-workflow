@@ -1,13 +1,13 @@
 {
   "name": "dev",
-  "version": "0.16.14-jcc.11",
+  "version": "1.0.0-jcc.1",
   "description": "Skills + Subagents for development — covers web, mobile, and integrations. Use skills for coding guidance, or run recipe workflows for full orchestrated agentic coding with backend, frontend, and full-stack agent variants.",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"
   },
-  "homepage": "https://github.com/jcchikikomori/claude-workflow",
-  "repository": "https://github.com/jcchikikomori/claude-workflow.git",
+  "homepage": "https://github.com/jcchikikomori/llm-agent-workflow",
+  "repository": "https://github.com/jcchikikomori/llm-agent-workflow.git",
   "license": "MIT",
   "keywords": [
     "workflows",

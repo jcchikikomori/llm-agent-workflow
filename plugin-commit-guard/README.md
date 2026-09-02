@@ -20,7 +20,7 @@ The hook never modifies the commit command. If your repository requires signed c
 ## Install
 
 ```bash
-/plugin install commit-guard@claude-workflow
+/plugin install commit-guard@llm-agent-workflow
 /reload-plugins
 ```
 
@@ -34,6 +34,13 @@ The hook never modifies the commit command. If your repository requires signed c
 | Token file | `~/.claude/.commit-guard-token` | SHA256 of approved command; single-use |
 
 ## Changelog
+
+### 1.0.0
+
+Major release for repository rename to `llm-agent-workflow`.
+
+- Updated install target to `commit-guard@llm-agent-workflow`.
+- No behavior changes to the approval gate or token flow.
 
 ### 0.2.0
 

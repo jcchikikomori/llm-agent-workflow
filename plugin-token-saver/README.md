@@ -28,7 +28,7 @@ The `token-saver` skill provides guidance on all 6 techniques:
 ## Install
 
 ```bash
-/plugin install token-saver@claude-workflow
+/plugin install token-saver@llm-agent-workflow
 /reload-plugins
 ```
 
@@ -120,6 +120,12 @@ Tracks timestamps in `~/.claude/.token-saver/`. After ~15 minutes, prints a remi
 Checks CLAUDE.md size at session start. Warns (never blocks) if it exceeds 3000 characters, with suggestions to move content to skills or memory files.
 
 ## Version History
+
+### 1.0.0
+
+- Major release for repository rename to `llm-agent-workflow`
+- Updated install target to `token-saver@llm-agent-workflow`
+- No hook/skill behavior changes
 
 ### 0.1.0
 
