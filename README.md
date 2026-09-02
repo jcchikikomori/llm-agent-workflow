@@ -17,6 +17,15 @@ adds QA-focused workflows, security guardrails, and cross-platform plugin suppor
 - Core fork-qualified plugins (`dev`, `qa`, `env-guard`) moved to `1.0.0-jcc.1`.
 - Independently versioned plugins moved to `1.0.0`.
 
+## Tag Policy
+
+To keep releases predictable and avoid accidental major-version drift:
+
+- The canonical repository tag baseline is `v1.0.0` for this rename release.
+- Do not create `v2.x` tags unless there is an intentional breaking-change release.
+- For fork-qualified plugin releases, follow `v<upstream>-jcc.<n>` tags (for example, `v1.0.0-jcc.1`).
+- For independently versioned plugins, follow plain SemVer tags (for example, `v1.0.0`).
+
 ## Quick Start
 
 ```bash
