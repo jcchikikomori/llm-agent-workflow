@@ -1,5 +1,5 @@
 {
-  "description": "Ensures '🤖 Written by Claude, reviewed by <user>' attribution on all external posts",
+  "description": "Anti-AI-slop + attribution governance: enforces '🤖 Written by Claude, reviewed by <user>' on external posts, blocks slop filler, and blocks AI trailers in git commit messages",
   "hooks": {
     "PreToolUse": [
       {

@@ -53,7 +53,7 @@ Platform support: macOS, Linux, WSL, native Windows.
 | `dev` | agentic-coding | Main development workflows for design, planning, implementation, and review |
 | `qa` | product-quality | Acceptance test generation, integration/E2E testing, browser QA |
 | `env-guard` | behavior-control | Blocks accidental `.env` and secret exposure |
-| `claude-attribution` | governance | Enforces AI attribution on external posts |
+| `claude-attribution` | governance | Anti-AI-slop + attribution governance on external posts and commits |
 | `markdown-format` | quality-enforcement | Auto-fixes markdown lint issues after writes |
 | `commit-guard` | behavior-control | Adds user approval gate before `git commit` |
 | `gh-issue-to-pr` | workflow-orchestration | Drives one GitHub issue from investigation to PR lifecycle |

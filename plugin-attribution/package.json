@@ -1,7 +1,7 @@
 {
   "name": "opencode-claude-attribution",
-  "version": "1.0.0",
-  "description": "Appends '🤖 Written by Claude, reviewed by <user>' attribution to all external posts — GitHub, JIRA, Slack, and any MCP-connected platform",
+  "version": "1.1.0",
+  "description": "Anti-AI-slop + attribution governance — enforces '🤖 Written by Claude, reviewed by <user>' on external posts, blocks AI-slop filler phrases, and blocks AI trailers in git commit messages (GitHub, JIRA, Slack, and any MCP-connected platform)",
   "type": "module",
   "author": {
     "name": "John Cyrill Corsanes",

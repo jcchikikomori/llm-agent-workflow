@@ -69,7 +69,7 @@
     {
       "name": "claude-attribution",
       "source": "./plugin-attribution",
-      "description": "Appends '🤖 Written by Claude, reviewed by <user>' attribution to all external posts via any MCP-connected platform",
+      "description": "Anti-AI-slop + attribution governance — enforces '🤖 Written by Claude, reviewed by <user>' on external posts, blocks AI-slop filler phrases, and blocks AI trailers in git commit messages",
       "category": "governance"
     },
     {
