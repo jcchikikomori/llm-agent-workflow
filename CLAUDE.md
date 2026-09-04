@@ -85,6 +85,22 @@ blocks those trailers on `git commit -m` / `-F` paths.
 This override applies to this repository even if global/default instructions
 suggest adding AI commit trailers elsewhere.
 
+## Agent Awareness Check (Mandatory)
+
+Before starting non-trivial work in this repo (implementation, review, planning, docs,
+task decomposition), check whether a `plugin-dev` or `plugin-qa` agent already covers the
+task — see the agent tables in `plugin-dev/.claude-plugin/plugin.json` and
+`plugin-qa/.claude-plugin/plugin.json` for the current list (26 dev agents, 4 qa agents).
+Prefer dispatching to the matching agent over free-form work.
+
+- This check applies unless a project MD file says otherwise for that task type — this
+  root `CLAUDE.md`, or a local override in `CLAUDE.local.md` (gitignored, machine/user-specific,
+  not committed to this repo). A local override always wins over this rule.
+- Skip the check only for trivial one-line edits, or when the user names a specific
+  approach or agent explicitly.
+- This is a self-check, not new tooling — no ping script, no eval harness. State which
+  agent (if any) applies before proceeding, or state that none fits.
+
 ## Using This as a Custom Marketplace
 
 ### Install the marketplace in Claude Code
@@ -108,10 +124,13 @@ This registers the marketplace from the GitHub repo. Claude Code reads `.claude-
 /plugin install memory-guard@llm-agent-workflow
 /plugin install opencode-migrate@llm-agent-workflow
 /plugin install mempalace-docker@llm-agent-workflow
+/plugin install token-saver@llm-agent-workflow
+/plugin install wandavision@llm-agent-workflow
 
 # External add-ons (pulled from their own repos)
 /plugin install metronome@llm-agent-workflow
 /plugin install discover@llm-agent-workflow
+/plugin install caveman@llm-agent-workflow
 ```
 
 ### Apply changes after install or update
@@ -136,6 +155,11 @@ Always reload after installing, updating, or switching plugins within the same s
 | `memory-guard` | behavior-control | SessionStart + PostToolUse hooks that watch `.claude/**`, root `CLAUDE.md`, and `docs/ticket-tracking/**` for changes, save them to memory, then remove or stash them per a one-time, per-project preference |
 | `opencode-migrate` | workflow-orchestration | Skill that migrates a Claude Code setup into opencode — global config, one repository, or a Claude Code plugin's own source — behind a plan-then-approve gate |
 | `mempalace-docker` | behavior-control | Runs MemPalace entirely from Docker — MCP server, CLI, and save hooks. Auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one palace in a named volume, mounts the current project, and auto-mines per project. **Replaces** the official `mempalace` plugin |
+| `token-saver` | behavior-control | Enforces token-efficient prompting and session hygiene |
+| `wandavision` | quality-enforcement | Deterministic image analysis via `mcp-vision` |
+| `metronome` | behavior-control | External — keeps workflows procedural and step-driven |
+| `discover` | product-quality | External — turns ideas into evidence-backed PRDs |
+| `caveman` | behavior-control | External — token-light response style plugin |
 | `skills` ([skills-md](https://github.com/jcchikikomori/skills-md)) | language/framework rules | Technology-specific coding standards — Ruby, Python, React, Node.js, Docker, etc. |
 
 The `dev` and `qa` plugins cover **workflow orchestration** — how to plan, build, and verify software using AI agents. The `skills` plugin (from the separate `skills-md` repo) covers **language and framework rules** — what good code looks like in a given technology. They complement each other and can be installed together.
@@ -341,7 +365,7 @@ plugin-mempalace-docker/          # mempalace-docker plugin — Dockerized MemPa
 
 Each plugin owns its agents and skills directly — no shared root directories, no symlinks. To update an agent or skill, edit it in the plugin directory where it belongs (`plugin-dev/agents/`, `plugin-qa/skills/`, etc.).
 
-External plugins (`metronome`, `discover`) are referenced by URL and maintained by their original authors. Do not modify their source URLs.
+External plugins (`metronome`, `discover`, `caveman`) are referenced by URL and maintained by their original authors. Do not modify their source URLs.
 
 ## Platform Support
 

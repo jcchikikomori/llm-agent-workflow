@@ -66,6 +66,12 @@ Platform support: macOS, Linux, WSL, native Windows.
 | `discover` | product-quality | Turns ideas into evidence-backed PRDs |
 | `caveman` | behavior-control | Token-light response style plugin |
 
+### External Plugins
+
+`metronome`, `discover`, and `caveman` are pulled from their own repos (URL-sourced entries
+in `.claude-plugin/marketplace.json`) and maintained by their original authors. See
+[Contributing](CONTRIBUTING.md) for submission rules.
+
 ## How It Works
 
 ### Development Workflow
@@ -104,23 +110,20 @@ All entry points use `/recipe-*`.
 | `/recipe-diagnose` | Root-cause investigation and solution path |
 | `/recipe-reverse-engineer` | Generate PRD/design docs from existing code |
 | `/recipe-pr-review` | Review an external PR with local codebase context |
+| `/recipe-generate-claude-md` | Generate a `CLAUDE.md` from scratch for a project that lacks one |
+| `/recipe-update-doc` | Update existing docs to stay consistent with code changes |
 
-### Fullstack and Frontend Recipes (`dev`)
-
-| Recipe | Purpose |
-| ------ | ------- |
-| `/recipe-fullstack-implement` | End-to-end backend + frontend delivery |
-| `/recipe-fullstack-build` | Build from an existing fullstack plan |
-| `/recipe-front-design` | UI spec + frontend design docs |
-| `/recipe-front-plan` | Frontend task planning |
-| `/recipe-front-build` | Frontend implementation from plan |
-| `/recipe-front-review` | Frontend review against design docs |
+Fullstack and frontend work isn't a separate set of recipes — `/recipe-implement` routes to
+a fullstack path automatically when a task spans both `backend` and `frontend`, dispatching
+`technical-designer-frontend`, `task-executor-frontend`, and `quality-fixer-frontend`
+alongside their backend counterparts.
 
 ### QA Recipes (`qa`)
 
 | Recipe | Purpose |
 | ------ | ------- |
 | `/recipe-add-integration-tests` | Add integration/E2E tests to existing features |
+| `/recipe-backend-integration-test` | Integration tests scoped to backend endpoints |
 | `/recipe-web-qa` | Browser-level QA on running web apps |
 
 ## Specialized Agents
