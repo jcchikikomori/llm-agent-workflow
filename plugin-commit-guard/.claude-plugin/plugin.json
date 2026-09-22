@@ -1,7 +1,7 @@
 {
   "name": "commit-guard",
-  "version": "1.0.0",
-  "description": "Asks user for approval before every git commit; preserves GPG signing and pinentry passphrase flow",
+  "version": "1.1.0",
+  "description": "Hands every git command that writes a commit message to the user to run in their own terminal, then watches for the result; preserves GPG signing and pinentry passphrase flow",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"
@@ -9,7 +9,15 @@
   "homepage": "https://github.com/jcchikikomori/llm-agent-workflow",
   "repository": "https://github.com/jcchikikomori/llm-agent-workflow.git",
   "license": "MIT",
-  "keywords": ["git", "commit", "guard", "approval", "gpg", "hooks", "behavior-control"],
+  "keywords": [
+    "git",
+    "commit",
+    "guard",
+    "delegation",
+    "gpg",
+    "hooks",
+    "behavior-control"
+  ],
   "skills": [
     "./skills/commit-guard"
   ]

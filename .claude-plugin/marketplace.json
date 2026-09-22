@@ -14,26 +14,26 @@
         "source": "url",
         "url": "https://github.com/jcchikikomori/skills-md.git"
       },
-      "description": "Language and framework-specific rules — Ruby, Python, React, Node.js, Docker, and more. Complements the dev/qa plugins with technology-specific coding standards.",
+      "description": "Language and framework-specific rules \u2014 Ruby, Python, React, Node.js, Docker, and more. Complements the dev/qa plugins with technology-specific coding standards.",
       "category": "skills",
       "homepage": "https://github.com/jcchikikomori/skills-md"
     },
     {
       "name": "dev",
       "source": "./plugin-dev",
-      "description": "Skills + Subagents for development — web, mobile, and integrations. Recipes for backend, frontend, and full-stack agentic coding.",
+      "description": "Skills + Subagents for development \u2014 web, mobile, and integrations. Recipes for backend, frontend, and full-stack agentic coding.",
       "category": "agentic-coding"
     },
     {
       "name": "qa",
       "source": "./plugin-qa",
-      "description": "Skills + Subagents for QA — web, mobile, and integration testing. Recipes for acceptance tests, E2E test generation, and browser-layer review.",
+      "description": "Skills + Subagents for QA \u2014 web, mobile, and integration testing. Recipes for acceptance tests, E2E test generation, and browser-layer review.",
       "category": "product-quality"
     },
     {
       "name": "env-guard",
       "source": "./plugin-env-guard",
-      "description": "Prevents Claude Code from reading or leaking sensitive files — .env, credentials, SSH keys — via hook enforcement and behavioral guidance",
+      "description": "Prevents Claude Code from reading or leaking sensitive files \u2014 .env, credentials, SSH keys \u2014 via hook enforcement and behavioral guidance",
       "category": "behavior-control"
     },
     {
@@ -62,32 +62,32 @@
         "source": "url",
         "url": "https://github.com/JuliusBrussee/caveman.git"
       },
-      "description": "A Claude Code skill/plugin and Codex plugin that makes agent talk like caveman — cutting ~75% of output tokens while keeping full technical accuracy.",
+      "description": "A Claude Code skill/plugin and Codex plugin that makes agent talk like caveman \u2014 cutting ~75% of output tokens while keeping full technical accuracy.",
       "category": "behavior-control",
       "homepage": "https://github.com/JuliusBrussee/caveman"
     },
     {
       "name": "claude-attribution",
       "source": "./plugin-attribution",
-      "description": "Anti-AI-slop + attribution governance — enforces '🤖 Written by Claude, reviewed by <user>' on external posts, blocks AI-slop filler phrases, and blocks AI trailers in git commit messages",
+      "description": "Anti-AI-slop + attribution governance \u2014 enforces '\ud83e\udd16 Written by Claude, reviewed by <user>' on external posts, blocks AI-slop filler phrases, and blocks AI trailers in git commit messages",
       "category": "governance"
     },
     {
       "name": "markdown-format",
       "source": "./plugin-markdown-format",
-      "description": "Auto-formats .md files after Claude writes or edits them using markdownlint-cli2 --fix — silently corrects LLM-generated markdown errors",
+      "description": "Auto-formats .md files after Claude writes or edits them using markdownlint-cli2 --fix \u2014 silently corrects LLM-generated markdown errors",
       "category": "quality-enforcement"
     },
     {
       "name": "commit-guard",
       "source": "./plugin-commit-guard",
-      "description": "Asks user for approval before every git commit; preserves GPG signing and pinentry passphrase flow",
+      "description": "Hands every git command that writes a commit message to the user to run in their own terminal, then watches for the result; GPG signing preserved",
       "category": "behavior-control"
     },
     {
       "name": "gh-issue-to-pr",
       "source": "./plugin-gh-issue-to-pr",
-      "description": "Drives a single GitHub issue end-to-end to a merged PR — investigate, plan, branch, implement, test, and (with explicit confirmation at each hard-to-reverse step) commit, open PR, review, merge, and close",
+      "description": "Drives a single GitHub issue end-to-end to a merged PR \u2014 investigate, plan, branch, implement, test, and (with explicit confirmation at each hard-to-reverse step) commit, open PR, review, merge, and close",
       "category": "workflow-orchestration"
     },
     {
@@ -99,13 +99,13 @@
     {
       "name": "token-saver",
       "source": "./plugin-token-saver",
-      "description": "Token-saving behavioral guidance — plan mode, proactive compaction, specific prompts, delegation, CLAUDE.md limits, and effort advice",
+      "description": "Token-saving behavioral guidance \u2014 plan mode, proactive compaction, specific prompts, delegation, CLAUDE.md limits, and effort advice",
       "category": "behavior-control"
     },
     {
       "name": "opencode-migrate",
       "source": "./plugin-opencode-migrate",
-      "description": "Migrates a Claude Code setup into opencode — global config, a single repository, or a Claude Code plugin's own source — behind a plan-then-approve gate",
+      "description": "Migrates a Claude Code setup into opencode \u2014 global config, a single repository, or a Claude Code plugin's own source \u2014 behind a plan-then-approve gate",
       "category": "workflow-orchestration"
     },
     {
@@ -117,7 +117,7 @@
     {
       "name": "mempalace-docker",
       "source": "./plugin-mempalace-docker",
-      "description": "Runs MemPalace from Docker — auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one shared palace in a named volume, mounts the current project, and auto-mines it per project",
+      "description": "Runs MemPalace from Docker \u2014 auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one shared palace in a named volume, mounts the current project, and auto-mines it per project",
       "category": "behavior-control"
     }
   ]

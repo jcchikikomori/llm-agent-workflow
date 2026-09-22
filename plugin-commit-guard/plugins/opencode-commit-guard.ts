@@ -1,53 +1,43 @@
-import { readFileSync, unlinkSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { existsSync } from "node:fs"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import type { Plugin } from "@opencode-ai/plugin"
 
 /**
- * commit-guard — OpenCode port of plugin-commit-guard's hooks/commit_guard_hook.py.
+ * commit-guard — OpenCode port of plugin-commit-guard.
  *
- * Approval-based flow (NOT the hard-block approach): blocks every `git commit`
- * bash call until the user explicitly approves it. On approval the agent writes
- * a one-time token file and retries; the retry passes through without a second
- * prompt and consumes the token.
+ * Delegation flow (NOT the old approval-then-retry flow): every git command
+ * that writes a commit message is handed to the user to run in their own
+ * terminal, and the agent arms a bounded watcher (hooks/await_commit.sh) that
+ * reports when the user finished, aborted, or ran out of time.
+ *
+ * This port deliberately does NOT reimplement the classification matrix. It
+ * shells out to hooks/commit_guard_hook.py — the same classifier the Claude
+ * Code hook uses — so the two ports cannot drift. Distinguishing
+ * `git merge --continue` (delegate) from `git merge --abort` (allow) and
+ * `git merge --squash` (allow, creates no commit) is ~250 lines of argv
+ * parsing; maintaining it twice is how the old regex port ended up weaker than
+ * the Python one.
+ *
+ * Environment overrides handed to the classifier:
+ *   COMMIT_GUARD_TOKEN_FILE — OpenCode's config dir, not ~/.claude
+ *   COMMIT_GUARD_STATE_DIR  — ledger + watcher result files
  *
  * GPG signing is fully preserved: the command is never modified, and the
  * instructions never suggest stripping -S/--gpg-sign or forcing --no-gpg-sign.
  */
 
-// Token config path lives under the OpenCode config dir (home + .config/opencode).
-const TOKEN_FILE = join(homedir(), ".config", "opencode", ".commit-guard-token")
+const HERE = dirname(fileURLToPath(import.meta.url))
+const HOOK = join(HERE, "..", "hooks", "commit_guard_hook.py")
 
-// Matches `git commit` (word-boundary, case-insensitive).
-const GIT_COMMIT_PATTERN = /\bgit\s+commit\b/i
+const CONFIG_DIR = join(homedir(), ".config", "opencode")
+const TOKEN_FILE = join(CONFIG_DIR, ".commit-guard-token")
+const STATE_DIR = join(CONFIG_DIR, ".commit-guard")
 
-// Matches single- and double-quoted strings — used to strip quoted content
-// before pattern matching so `git commit` inside a string arg (e.g. the
-// approval token-write command) doesn't falsely trigger the hook.
-const QUOTED_STRING_PATTERN = /"[^"]*"|'[^']*'/g
-
-const BLOCKED_MESSAGE = `[commit-guard] BLOCKED: git commit requires user approval.
-
-Before running this commit, you MUST:
-1. Run: git diff --cached --stat
-2. Run: git diff --cached --name-only
-3. Extract the commit message from the command (the -m "..." value), or note that it uses an editor/template
-4. Show the user:
-   - Staged files (from step 1 and 2)
-   - Commit message (from step 3)
-   - The exact command you are about to run
-5. Ask the user: "Proceed with this commit?"
-6. If the user says YES:
-   - Write the one-time approval token (SHA256 of exact command + cwd + timestamp):
-     python3 -c "import hashlib,sys,pathlib,time; cmd=sys.argv[1]; cwd=sys.argv[2]; p=pathlib.Path.home()/'.config'/'opencode'/'.commit-guard-token'; p.parent.mkdir(exist_ok=True); p.write_text(hashlib.sha256((cmd+'|'+cwd+'|'+str(time.time())).encode()).hexdigest())" "<exact-command>" "<cwd>"
-   - Then retry the EXACT same command unchanged
-7. If the user says NO: abort. Do NOT retry.
-
-IMPORTANT — GPG signing policy:
-  - Never add --no-gpg-sign or -c commit.gpgsign=false
-  - Never strip -S or --gpg-sign from the command
-  - If the repo requires signed commits, git will invoke gpg-agent/pinentry after approval
-  - The user will enter their passphrase through the normal pinentry dialog (TTY/pinentry-aware)`
+// Fast path only. Real classification happens in the Python hook.
+const GIT_WORD = /(?<![\w./-])git(?:\.exe)?(?![\w.-])/
 
 export const opencodeCommitGuard: Plugin = async ({ client }) => {
   return {
@@ -56,54 +46,61 @@ export const opencodeCommitGuard: Plugin = async ({ client }) => {
 
       const command: string =
         typeof output?.args?.command === "string" ? output.args.command : ""
+      if (!command || !GIT_WORD.test(command)) return
 
-      const unquoted = command.replace(QUOTED_STRING_PATTERN, "")
-      if (!GIT_COMMIT_PATTERN.test(unquoted)) return
+      if (!existsSync(HOOK)) {
+        // Fail CLOSED. A missing classifier must never mean "allow".
+        throw new Error(
+          `[commit-guard] classifier not found at ${HOOK}. Blocking to be safe — ` +
+            `hand the command to the user and ask them to run it.`,
+        )
+      }
 
-      // Token present → this is the approved retry. Consume it (single-use) and allow.
-      if (readToken() !== null) {
-        consumeToken()
+      const python = process.env.COMMIT_GUARD_PYTHON ?? "python3"
+      const result = spawnSync(python, [HOOK], {
+        input: JSON.stringify({
+          tool_name: "Bash",
+          tool_input: { command },
+          cwd: process.cwd(),
+        }),
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          COMMIT_GUARD_TOKEN_FILE: TOKEN_FILE,
+          COMMIT_GUARD_STATE_DIR: STATE_DIR,
+        },
+      })
+
+      if (result.error || result.status === null) {
+        throw new Error(
+          `[commit-guard] could not run the classifier (${python}): ` +
+            `${result.error?.message ?? "no exit status"}. Blocking to be safe — ` +
+            `hand the command to the user and ask them to run it.`,
+        )
+      }
+
+      // 0 = allow (not a commit-writing command, or an approved one-time token
+      // was consumed). 2 = block, with the delegate payload on stderr.
+      if (result.status === 0) return
+
+      if (result.status === 2) {
         await client.app.log({
           body: {
             service: "commit-guard",
-            level: "info",
-            message: "Approved git commit (one-time token consumed)",
+            level: "warn",
+            message: "Delegated a commit-writing git command to the user",
           },
         })
-        return
+        throw new Error(result.stderr.trim())
       }
 
-      await client.app.log({
-        body: {
-          service: "commit-guard",
-          level: "warn",
-          message: "Blocked git commit — awaiting user approval",
-        },
-      })
-      throw new Error(BLOCKED_MESSAGE)
+      // Any other exit code means the classifier itself failed. Fail CLOSED:
+      // in Claude Code a non-0/2 exit is a *non-blocking* error, which is
+      // exactly the fail-open this port must not reproduce.
+      throw new Error(
+        `[commit-guard] classifier exited ${result.status}. Blocking to be safe.\n` +
+          `${result.stderr.trim()}`,
+      )
     },
-  }
-}
-
-/**
- * Token presence = approval. Content is a SHA256 of command + cwd + timestamp,
- * which cannot be recomputed at hook time (timestamp is write-time only), so
- * validity is presence-based. The file is single-use — consumed on the next
- * `git commit`, after which the hook blocks again.
- */
-function readToken(): string | null {
-  try {
-    const token = readFileSync(TOKEN_FILE, "utf8").trim()
-    return token.length > 0 ? token : null
-  } catch {
-    return null
-  }
-}
-
-function consumeToken(): void {
-  try {
-    unlinkSync(TOKEN_FILE)
-  } catch {
-    // File already gone — nothing to clean up.
   }
 }

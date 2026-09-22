@@ -150,7 +150,7 @@ Always reload after installing, updating, or switching plugins within the same s
 | `env-guard` | behavior-control | Hook enforcement to prevent leaking .env and secrets |
 | `claude-attribution` | governance | Anti-AI-slop + attribution governance — hook + skill enforcing "Written by Claude, reviewed by \<user\>" attribution, blocking AI-slop filler on posts, and blocking AI trailers in commit messages |
 | `markdown-format` | quality-enforcement | PostToolUse hook + skill — runs `markdownlint-cli2 --fix` on every `.md` write; non-blocking |
-| `commit-guard` | behavior-control | PreToolUse hook that intercepts every `git commit`, shows staged files + message for user approval; GPG signing preserved |
+| `commit-guard` | behavior-control | PreToolUse hook that intercepts every git command writing a commit message (commit, merge, cherry-pick, revert, rebase, `am`, annotated tags, `pull --rebase`/`--no-ff`), hands it to the user to run in their own terminal, then arms a bounded watcher for the result; GPG signing preserved |
 | `gh-issue-to-pr` | workflow-orchestration | Agent that drives a single GitHub issue end-to-end to a merged PR — investigate, plan, branch, implement, test, commit (with confirmation), PR, review, merge, close |
 | `memory-guard` | behavior-control | SessionStart + PostToolUse hooks that watch `.claude/**`, root `CLAUDE.md`, and `docs/ticket-tracking/**` for changes, save them to memory, then remove or stash them per a one-time, per-project preference |
 | `opencode-migrate` | workflow-orchestration | Skill that migrates a Claude Code setup into opencode — global config, one repository, or a Claude Code plugin's own source — behind a plan-then-approve gate |
@@ -356,7 +356,7 @@ plugin-qa/                        # qa plugin — web, mobile, integration testi
 plugin-env-guard/                 # env-guard plugin — secrets leak prevention
 plugin-attribution/               # claude-attribution plugin — anti-AI-slop + attribution governance on MCP posts and commits
 plugin-markdown-format/           # markdown-format plugin — auto-fix markdown lint issues on write
-plugin-commit-guard/              # commit-guard plugin — user approval gate before every git commit
+plugin-commit-guard/              # commit-guard plugin — delegate commit-message git commands to the user, then watch
 plugin-gh-issue-to-pr/            # gh-issue-to-pr plugin — GitHub issue-to-merged-PR agent
 plugin-memory-guard/              # memory-guard plugin — watch .claude/**, save to memory, offer stash
 plugin-opencode-migrate/          # opencode-migrate plugin — Claude Code -> opencode migration skill

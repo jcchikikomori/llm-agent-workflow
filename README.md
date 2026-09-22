@@ -55,7 +55,7 @@ Platform support: macOS, Linux, WSL, native Windows.
 | `env-guard` | behavior-control | Blocks accidental `.env` and secret exposure |
 | `claude-attribution` | governance | Anti-AI-slop + attribution governance on external posts and commits |
 | `markdown-format` | quality-enforcement | Auto-fixes markdown lint issues after writes |
-| `commit-guard` | behavior-control | Adds user approval gate before `git commit` |
+| `commit-guard` | behavior-control | Hands commit-message git commands to the user to run, then watches for the result |
 | `gh-issue-to-pr` | workflow-orchestration | Drives one GitHub issue from investigation to PR lifecycle |
 | `memory-guard` | behavior-control | Watches sensitive docs and routes changes to memory + remove/stash policy |
 | `token-saver` | behavior-control | Enforces token-efficient prompting and session hygiene |
