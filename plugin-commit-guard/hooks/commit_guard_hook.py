@@ -42,9 +42,20 @@ TOKEN_FILE = Path(
 
 GIT_TIMEOUT = 2
 
-# A bare `git` word. Not preceded by a path/word char, not followed by one --
-# so `legit`, `git-foo` and `/usr/bin/git` (handled separately) do not match.
-GIT_WORD = re.compile(r"(?<![\w./-])git(?:\.exe)?(?![\w.-])")
+# A `git` word, however it is spelled on the command line.
+#
+# The lookbehind excludes ONLY word characters and `-`, so `legit` and
+# `foo-git` do not match. It must NOT exclude `/` or `.`: doing so made every
+# path-qualified invocation invisible to the fast path -- `/usr/bin/git commit`,
+# `./git commit` and `"/usr/bin/git" commit` all returned exit 0 on line one and
+# never reached the classifier. A loose match here is harmless, because
+# basename() resolution in scan() is what actually decides.
+GIT_WORD = re.compile(r"(?<![\w-])git(?:\.exe)?(?![\w.-])")
+
+# Shell constructs whose expansion we cannot resolve statically. If one of these
+# appears alongside a git word and normal parsing found nothing, we cannot prove
+# the command is safe, so we fail CLOSED rather than allow it.
+OPAQUE = re.compile(r"\$\(|`|\$\{|\beval\b|\bxargs\b|\|\s*(?:sh|bash|zsh|dash|ksh)\b")
 
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 
@@ -346,11 +357,18 @@ def resolve_alias(subcommand, cwd):
 
 
 def scan(command, base_cwd, depth=0):
-    """Walk every simple command and return the hits, in order.
-    Each hit is (op, cwd, git_dir_override, tag_name)."""
+    """Walk every simple command. Returns (hits, saw_git).
+
+    Each hit is (op, cwd, git_dir_override, tag_name). `saw_git` is True if a
+    real git invocation was resolved -- even a harmless one like `git status`.
+    It is what lets an opaque construct fail closed only when the parser
+    understood nothing, so `git log --format=$(...)` stays allowed while
+    `$(which git) commit` does not.
+    """
     hits = []
+    saw_git = False
     if depth > 3:
-        return hits
+        return hits, saw_git
     # Heredocs must be stripped FIRST: the stripper is line-based, and
     # newlines_to_semicolons would leave it nothing to work with.
     tokens = tokenize(newlines_to_semicolons(strip_heredocs(command)))
@@ -372,10 +390,13 @@ def scan(command, base_cwd, depth=0):
                     payload = argv[index + 1]
                     break
             if payload:
-                hits.extend(scan(payload, cwd, depth + 1))
+                nested_hits, nested_saw = scan(payload, cwd, depth + 1)
+                hits.extend(nested_hits)
+                saw_git = saw_git or nested_saw
             continue
         if head not in ("git", "git.exe"):
             continue
+        saw_git = True
         subcommand, args, overrides = split_git_options(argv)
         if subcommand is None:
             continue
@@ -389,7 +410,7 @@ def scan(command, base_cwd, depth=0):
         if op:
             hits.append((op, effective, overrides.get("git_dir"),
                          tag_name_of(args) if op == "tag" else None))
-    return hits
+    return hits, saw_git
 
 
 STATE_DIR = Path(
@@ -594,6 +615,22 @@ Check the real state with `git log --oneline -3` and `git status --short
 not run it yourself."""
 
 
+OPAQUE_BLOCK = """\
+[commit-guard] BLOCKED: this command mentions git and contains a construct whose
+expansion cannot be resolved before it runs -- command substitution, backticks,
+eval, xargs, or a pipe into a shell.
+
+COMMAND:
+  {command}
+
+The guard cannot prove this does not write a commit, so it fails closed.
+
+Rewrite it so the git invocation is literal, e.g. `git commit -m "..."` rather
+than `$(which git) commit -m "..."`. If it genuinely does not commit anything,
+split the git-mentioning part into its own command. Do not route around this.
+"""
+
+
 def emit(text):
     print(text, file=sys.stderr)
     sys.exit(2)
@@ -618,12 +655,18 @@ def main():
 
     base_cwd = data.get("cwd") or os.getcwd()
     try:
-        hits = scan(command, base_cwd)
+        hits, saw_git = scan(command, base_cwd)
     except ValueError:
         # Unbalanced quotes -- we cannot prove this is safe, so fail CLOSED.
-        hits = [("commit", base_cwd, None, None)]
+        hits, saw_git = [("commit", base_cwd, None, None)], True
 
     if not hits:
+        # `$(which git) commit`, `echo '...' | bash`, backticks, eval, xargs --
+        # the git word is there but the real argv is only knowable at runtime.
+        # Allowing these would be a silent bypass, so block and say why.
+        if not saw_git and OPAQUE.search(command):
+            emit(OPAQUE_BLOCK.format(command=command) if mode != "deny"
+                 else DENIED.format(command=command))
         sys.exit(0)
 
     # A chain like `git add . && git commit -m x` is handed over whole, and the

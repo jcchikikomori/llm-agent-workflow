@@ -133,9 +133,12 @@ bound to both the exact command and the repo, and consumed on first match.
 
 ## Known limits
 
-1. **This hook is advisory, not enforcement.** `git commit-tree`,
-   `git update-ref`, `git fast-import`, or writing a shell script and running it
-   all evade any Bash-command parser. Real enforcement would need a repo-level
+1. **This hook is advisory, not enforcement.** Plumbing (`git commit-tree`,
+   `git update-ref`, `git fast-import`) and writing a shell script to disk and
+   running it still evade any Bash-command parser, because the committing call
+   never appears in a command string the hook sees. Inline opaque constructs
+   (`$(...)`, backticks, `eval`, `xargs`, a pipe into a shell) *are* caught as of
+   1.1.1 — they fail closed. Real enforcement would need a repo-level
    `pre-commit`/`prepare-commit-msg` hook that refuses when `CLAUDECODE=1` unless
    a human-minted token is present.
 2. **Plain `git pull` can still create a merge commit** when it is not a
@@ -154,6 +157,27 @@ bound to both the exact command and the repo, and consumed on first match.
    predicate covers only the commit.
 
 ## Changelog
+
+### 1.1.1
+
+Security fix — closes four command-detection bypasses found by a post-push
+review.
+
+- **Path-qualified git was invisible.** The fast-path regex used the lookbehind
+  `(?<![\w./-])git`, which excluded `/`, `.` and `-`. That made
+  `/usr/bin/git commit`, `./git commit` and `"/usr/bin/git" commit` fail the
+  match on line one and return exit 0 without ever reaching the classifier. The
+  lookbehind now excludes only `[\w-]`, which is all that was ever needed to
+  stop `legit` matching; `basename()` resolution in `scan()` is what actually
+  decides.
+- **Opaque constructs now fail closed.** `$(which git) commit`,
+  `` `which git` commit ``, `eval "git commit ..."`, `echo '...' | bash` and
+  `xargs` forms hide the real argv until runtime. When a git word is present,
+  the parser resolved no git invocation at all, and one of those constructs
+  appears, the hook blocks with an explanation instead of allowing.
+- The block is scoped by a new `saw_git` signal, so a command the parser *did*
+  understand is trusted — `git log --format="$(...)"` and
+  `git diff $(git merge-base HEAD main)` stay allowed.
 
 ### 1.1.0
 
