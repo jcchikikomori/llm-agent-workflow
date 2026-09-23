@@ -79,19 +79,39 @@ class WrapperTests(unittest.TestCase):
 
     # -- runtime selection ---------------------------------------------------
 
-    def test_host_rumdl_wins_over_docker(self):
+    def test_docker_wins_over_host_rumdl(self):
         self.stub("rumdl")
         self.stub("docker", DOCKER_STUB)
 
         result = self.run_wrapper()
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.calls(), [f"rumdl --config {BUNDLED_CONFIG} server"])
-        self.assertIn("running host rumdl", result.stderr)
+        [call] = self.calls()
+        self.assertTrue(call.startswith("docker run "), call)
+        self.assertIn("running rumdl in ghcr.io/rvben/rumdl:latest", result.stderr)
 
-    def test_docker_used_when_no_host_rumdl(self):
+    def test_host_rumdl_when_daemon_unreachable(self):
+        self.stub("rumdl")
         self.stub("docker", DOCKER_STUB)
         self.stub("uvx")
+
+        result = self.run_wrapper(STUB_INFO_EXIT="1")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.calls(), [f"rumdl --config {BUNDLED_CONFIG} server"])
+        self.assertIn("docker daemon not reachable", result.stderr)
+        self.assertIn("running host rumdl", result.stderr)
+
+    def test_host_rumdl_when_docker_missing(self):
+        self.stub("rumdl")
+
+        result = self.run_wrapper()
+
+        self.assertEqual(self.calls(), [f"rumdl --config {BUNDLED_CONFIG} server"])
+        self.assertIn("docker not on PATH", result.stderr)
+
+    def test_docker_run_args(self):
+        self.stub("docker", DOCKER_STUB)
 
         result = self.run_wrapper()
 
@@ -161,7 +181,7 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(self.calls(), [f"uvx rumdl --config {BUNDLED_CONFIG} server"])
         self.assertIn("FORCE_HOST=1", result.stderr)
 
-    def test_force_docker_beats_host_rumdl(self):
+    def test_force_docker_uses_docker(self):
         self.stub("rumdl")
         self.stub("docker", DOCKER_STUB)
 
@@ -179,7 +199,7 @@ class WrapperTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertEqual(self.calls(), [])
-        self.assertIn("refusing other runtimes", result.stderr)
+        self.assertIn("refusing host fallback", result.stderr)
 
     # -- config selection ----------------------------------------------------
 

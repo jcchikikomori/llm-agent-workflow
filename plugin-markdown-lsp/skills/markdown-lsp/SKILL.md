@@ -38,6 +38,16 @@ When the repo has its own `.rumdl.toml`, `.markdownlint.*` or `[tool.rumdl]` con
 - **MD057 (missing relative link target):** check the path first. Fix the link, or tell the user the target file does
   not exist yet.
 
+## Out-of-date diagnostics after a formatter fix
+
+The LSP sees your edit **before** the `markdown-format` hook rewrites the file. When that plugin is installed, an
+auto-fixable offense (MD004 bullet style, MD040 fence language, MD009 trailing spaces and similar) can still come back
+once, after the file on disk is already fixed.
+
+- Before fixing an auto-fixable rule, re-read the flagged line. If it is already correct, skip it and don't mention it.
+- Offenses the formatter can't fix (MD059 link text, MD013 line length, MD001 heading jumps) are always current. Fix
+  them.
+
 ## Standards no lint rule can check
 
 rumdl checks structure, not meaning. For prose quality, follow the `skills-md:markdown` skill:
@@ -51,15 +61,15 @@ rumdl checks structure, not meaning. For prose quality, follow the `skills-md:ma
 No diagnostics can mean either of these:
 
 - the file is clean, or
-- the server is not running. The usual causes are no rumdl on the host, a Docker daemon that is down, or a first
-  `docker pull` still in progress.
+- the server is not running. The usual causes are a first `docker pull` still in progress, or a Docker daemon that is
+  down with no `rumdl` on the host.
 
 If you expected an offense and got none, say so. Point the user at `claude --debug` and the `[markdown-lsp]` stderr
 lines instead of assuming the file is clean.
 
 ## Install hints
 
-Any one of these puts `rumdl` on the host, which is the fastest runtime:
+Docker runs rumdl first. Any one of these puts `rumdl` on the host as the fallback for when Docker is down:
 
 ```bash
 brew install rumdl

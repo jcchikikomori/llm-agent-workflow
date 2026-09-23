@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Host-first, Docker-fallback launcher for the markdown-lsp plugin.
+# Docker-first, native-binary-fallback launcher for the markdown-lsp plugin.
 #
 #   run-rumdl.sh server       -> rumdl LSP server (JSON-RPC on stdio)
 #   run-rumdl.sh check FILE   -> any other rumdl subcommand, same selection
@@ -17,9 +17,9 @@
 #   3. Otherwise the bundled config/rumdl.toml.
 #
 # Runtime selection:
-#   1. Host `rumdl` on PATH. rumdl is a standalone binary, not a project
-#      dependency, so a container adds cold-start latency and no parity.
-#   2. Docker image, when the daemon is reachable.
+#   1. Docker image, when the daemon is reachable. Same order as the ruby-lsp
+#      plugin: one pinned-by-tag runtime, nothing to install on the host.
+#   2. Host `rumdl` on PATH.
 #   3. `uvx rumdl`, then `npx --yes rumdl`.
 #   4. Nothing found -> exit 127.
 #
@@ -27,7 +27,7 @@
 #   MARKDOWN_LSP_PLUGIN_CONFIG=<path>  explicit rumdl config file
 #   MARKDOWN_LSP_PLUGIN_IMAGE=<ref>    image (default ghcr.io/rvben/rumdl:latest)
 #   MARKDOWN_LSP_PLUGIN_FORCE_HOST=1   skip Docker entirely
-#   MARKDOWN_LSP_PLUGIN_FORCE_DOCKER=1 use Docker only; exit 1 when unusable
+#   MARKDOWN_LSP_PLUGIN_FORCE_DOCKER=1 fail (exit 1) instead of falling back
 set -euo pipefail
 
 log() { printf '[markdown-lsp] %s\n' "$*" >&2; }
@@ -110,21 +110,18 @@ run_docker() {
     "$image" "${run_args[@]}"
 }
 
+if docker_usable; then
+  run_docker
+fi
+
 if [ "${MARKDOWN_LSP_PLUGIN_FORCE_DOCKER:-}" = '1' ]; then
-  if docker_usable; then
-    run_docker
-  fi
-  log 'MARKDOWN_LSP_PLUGIN_FORCE_DOCKER=1 but Docker is unusable, refusing other runtimes'
+  log 'MARKDOWN_LSP_PLUGIN_FORCE_DOCKER=1 but Docker is unusable, refusing host fallback'
   exit 1
 fi
 
 if command -v rumdl >/dev/null 2>&1; then
   log 'running host rumdl'
   exec rumdl "${run_args[@]}"
-fi
-
-if docker_usable; then
-  run_docker
 fi
 
 if command -v uvx >/dev/null 2>&1; then
@@ -137,5 +134,5 @@ if command -v npx >/dev/null 2>&1; then
   exec npx --yes rumdl "${run_args[@]}"
 fi
 
-log 'rumdl not found. Install one of: brew install rumdl | uv tool install rumdl | pip install rumdl | npm install -g rumdl | cargo install rumdl'
+log 'Docker unusable and rumdl not found. Start Docker, or install one of: brew install rumdl | uv tool install rumdl | pip install rumdl | npm install -g rumdl | cargo install rumdl'
 exit 127

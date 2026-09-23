@@ -129,7 +129,7 @@
     {
       "name": "markdown-lsp",
       "source": "./plugin-markdown-lsp",
-      "description": "Markdown diagnostics \u2014 rumdl LSP pushes markdownlint-compatible offenses after every .md/.mdx edit, bundled config mirrors the skills-md markdown standards, host-first with Docker fallback",
+      "description": "Markdown diagnostics \u2014 rumdl LSP pushes markdownlint-compatible offenses after every .md/.mdx edit, bundled config mirrors the skills-md markdown standards, Docker-first with host fallback",
       "category": "quality-enforcement"
     }
   ]

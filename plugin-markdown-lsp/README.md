@@ -18,17 +18,17 @@ silence was the gap. Claude never heard about the offenses that can't be auto-fi
 /reload-plugins
 ```
 
-Then put `rumdl` on the host. This is optional, because Docker works too, but it starts fastest:
+Docker is the primary runtime, so nothing else is needed while the daemon runs. For machines without Docker, install
+`rumdl` on the host as the fallback:
 
 ```bash
-brew install rumdl        # or: uv tool install rumdl | pip install rumdl | npm install -g rumdl
+uv tool install rumdl     # or: brew install rumdl | pip install rumdl | npm install -g rumdl
 ```
 
-## How it runs: host first, Docker fallback
+## How it runs: Docker first, native binary fallback
 
 `.lsp.json` launches `scripts/run-rumdl.sh server`. The wrapper picks the first runtime that works:
 
-1. **Host binary.** `rumdl` on `PATH`.
 1. **Docker.** Used when `docker info` answers. The image is `ghcr.io/rvben/rumdl:latest`, a small static image.
    The command is:
 
@@ -36,12 +36,13 @@ brew install rumdl        # or: uv tool install rumdl | pip install rumdl | npm 
    docker run --rm -i --user "$(id -u):$(id -g)" -v "$PWD:$PWD" -w "$PWD" ghcr.io/rvben/rumdl:latest server
    ```
 
+1. **Native binary.** `rumdl` on `PATH`.
 1. **`uvx rumdl`**, then **`npx --yes rumdl`**.
 1. **Nothing found.** Exit 127 with install hints on stderr.
 
-Why host first, when the ruby-lsp plugin goes Docker first: ruby-lsp needs the project's own gem versions, and only the
-project's compose service has those. rumdl is a standalone binary with no project dependency, so a container gives no
-parity. It only adds cold-start time.
+This is the same order as the ruby-lsp plugin. One runtime, the image, behaves the same on every machine, and the host
+binary only matters when Docker is down. The cost is container start-up on every LSP launch, usually under a second
+once the image is pulled.
 
 How it behaves:
 
@@ -56,7 +57,7 @@ How it behaves:
 | `MARKDOWN_LSP_PLUGIN_CONFIG` | Explicit rumdl config path. Always wins |
 | `MARKDOWN_LSP_PLUGIN_IMAGE` | Docker image, for example to pin `ghcr.io/rvben/rumdl:0.2.76` |
 | `MARKDOWN_LSP_PLUGIN_FORCE_HOST=1` | Skip Docker entirely |
-| `MARKDOWN_LSP_PLUGIN_FORCE_DOCKER=1` | Docker only. Exit 1 when it is unusable |
+| `MARKDOWN_LSP_PLUGIN_FORCE_DOCKER=1` | Exit 1 instead of falling back to the native binary |
 
 ## Config: project first, bundled fallback
 
@@ -90,7 +91,21 @@ The two plugins do different jobs, so install both:
 - **markdown-format** runs `markdownlint-cli2 --fix` after each write. It fixes silently and never reports.
 - **markdown-lsp** reports what is left, so Claude can fix the rest by hand.
 
-One gap is known. `markdown-format` disables MD013, so it never wraps long lines. The LSP still flags lines over 120
+### Out-of-date diagnostics after a formatter fix
+
+Claude Code sends Claude's edit to the LSP **before** the `markdown-format` PostToolUse hook rewrites the file. So an
+offense the formatter fixes can still come back once as a diagnostic, even though the file on disk is already correct.
+
+Seen in testing: Claude wrote a `* item` bullet. `markdown-format` changed it to `- item`, but rumdl still reported
+`[MD004] List marker '*' does not match expected style '-'` for the pre-hook content.
+
+What to do: before acting on MD004, MD040, MD009 or another auto-fixable rule, check the current line. If it is already
+fixed, ignore the diagnostic. The next edit refreshes it. Offenses the formatter can't fix, such as MD059 link text or
+MD013 line length, are always current.
+
+### Line length
+
+`markdown-format` disables MD013, so it never wraps long lines. The LSP still flags lines over 120
 characters. That is on purpose: line wrapping needs judgment, and a reflow tool should not do it blind.
 
 ## Tests
@@ -114,12 +129,19 @@ daemon is needed.
 
 ## Changelog
 
+### 0.2.0
+
+- Runtime order is now **Docker first**, then native `rumdl`, then `uvx`, then `npx`. This matches ruby-lsp.
+- `MARKDOWN_LSP_PLUGIN_FORCE_DOCKER=1` now only blocks the fallback. Docker is already tried first.
+- Documented the out-of-date diagnostics that appear when `markdown-format` fixes an offense after the LSP has seen
+  the edit.
+
 ### 0.1.0
 
 Initial release.
 
 - `.lsp.json` registers rumdl for `.md`, `.markdown` and `.mdx`, launched through the wrapper.
-- `scripts/run-rumdl.sh` tries host rumdl first, then Docker, then `uvx`, then `npx`. The project config wins over the
+- `scripts/run-rumdl.sh` tried host rumdl first, then Docker, then `uvx`, then `npx`. The project config wins over the
   bundled config.
 - `config/rumdl.toml` is a fallback config derived from the `skills-md:markdown` standards.
 - `skills/markdown-lsp` holds the pre-write checklist and the rules for handling diagnostics.

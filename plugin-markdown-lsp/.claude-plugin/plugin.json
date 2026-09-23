@@ -1,7 +1,7 @@
 {
   "name": "markdown-lsp",
-  "version": "0.1.0",
-  "description": "Markdown diagnostics for Claude Code — rumdl LSP reports markdownlint-compatible offenses after every edit, with a bundled config matching the skills-md markdown standards; host-first with Docker fallback",
+  "version": "0.2.0",
+  "description": "Markdown diagnostics for Claude Code — rumdl LSP reports markdownlint-compatible offenses after every edit, with a bundled config matching the skills-md markdown standards; Docker-first with host fallback",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"

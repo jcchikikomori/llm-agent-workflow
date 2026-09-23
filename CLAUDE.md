@@ -160,7 +160,7 @@ Always reload after installing, updating, or switching plugins within the same s
 | `opencode-migrate` | workflow-orchestration | Skill that migrates a Claude Code setup into opencode — global config, one repository, or a Claude Code plugin's own source — behind a plan-then-approve gate |
 | `mempalace-docker` | behavior-control | Runs MemPalace entirely from Docker — MCP server, CLI, and save hooks. Auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one palace in a named volume, mounts the current project, and auto-mines per project. **Replaces** the official `mempalace` plugin |
 | `ruby-lsp` | quality-enforcement | LSP + hook + skill — ruby-lsp (RuboCop diagnostics after every `.rb` edit), advisory Reek smells via PostToolUse, Docker-first wrapper with host fallback. Install **instead of** the official `ruby-lsp` plugin |
-| `markdown-lsp` | quality-enforcement | LSP + skill — rumdl pushes markdownlint-compatible diagnostics after every `.md`/`.mdx` edit; bundled config mirrors `skills-md:markdown`, project config wins. Host-first wrapper with Docker, `uvx`, `npx` fallbacks. Complements `markdown-format` |
+| `markdown-lsp` | quality-enforcement | LSP + skill — rumdl pushes markdownlint-compatible diagnostics after every `.md`/`.mdx` edit; bundled config mirrors `skills-md:markdown`, project config wins. Docker-first wrapper with native binary, `uvx`, `npx` fallbacks. Complements `markdown-format` |
 | `token-saver` | behavior-control | Enforces token-efficient prompting and session hygiene |
 | `wandavision` | quality-enforcement | Deterministic image analysis via `mcp-vision` |
 | `metronome` | behavior-control | External — keeps workflows procedural and step-driven |
@@ -240,6 +240,23 @@ The `dev` and `qa` plugins cover **workflow orchestration** — how to plan, bui
 
 ---
 
+### LSP plugin execution order (convention)
+
+Every LSP plugin in this repo (`ruby-lsp`, `markdown-lsp`) launches its server through a wrapper script, and every wrapper uses the same order:
+
+1. **Docker** — when the daemon answers (and, for `ruby-lsp`, when the gem is in `Gemfile.lock` and a compose service matches).
+1. **Native binary** — the tool on the host (`bundle exec` / global binary for Ruby; `rumdl`, then `uvx` / `npx` for Markdown).
+1. **Nothing found** — exit 127 with an install hint on stderr.
+
+Shared rules:
+
+- The project is mounted at its **identical host path**, so LSP file URIs stay valid on both sides.
+- stdout carries JSON-RPC only. Every selection or fallback reason goes to stderr with a `[<plugin>]` prefix.
+- `*_FORCE_HOST=1` skips Docker. `*_FORCE_DOCKER=1` exits 1 instead of falling back to the native binary.
+- A new LSP plugin follows the same order unless its README says why it differs.
+
+---
+
 ### ruby-lsp plugin
 
 **Purpose:** Cut lint-fix-relint loops on LLM-written Ruby/Rails code by surfacing RuboCop offenses and Reek smells at edit time.
@@ -264,10 +281,11 @@ The `dev` and `qa` plugins cover **workflow orchestration** — how to plan, bui
 **How it works:**
 
 - `.lsp.json` registers [rumdl](https://github.com/rvben/rumdl) (`rumdl server`) for `.md`, `.markdown` and `.mdx`.
-- `scripts/run-rumdl.sh` tries host `rumdl` first, then `docker run -i ghcr.io/rvben/rumdl`, then `uvx rumdl`, then `npx --yes rumdl`. Host goes first because rumdl is a standalone binary with no project dependency, so a container adds latency and no parity.
+- `scripts/run-rumdl.sh` tries Docker first (`docker run -i ghcr.io/rvben/rumdl`, project mounted at its identical host path), then native `rumdl`, then `uvx rumdl`, then `npx --yes rumdl`. Same order as `ruby-lsp`; see the convention above.
 - Config: a project `.rumdl.toml`, `.config/rumdl.toml`, `[tool.rumdl]` or `.markdownlint.*` (searched upward to the `.git` boundary) wins. Otherwise the wrapper passes the bundled `config/rumdl.toml`, which mirrors the `skills-md:markdown` standards. MD033, MD041 and MD024 match `markdown-format`'s config.
 - Overrides: `MARKDOWN_LSP_PLUGIN_CONFIG`, `MARKDOWN_LSP_PLUGIN_IMAGE`, `MARKDOWN_LSP_PLUGIN_FORCE_HOST`, `MARKDOWN_LSP_PLUGIN_FORCE_DOCKER`.
 - No hook. The LSP already reports after each edit, and `markdown-format` already fixes.
+- Known quirk: the LSP sees Claude's edit **before** `markdown-format`'s PostToolUse hook rewrites the file, so offenses the formatter fixes (MD004, MD040 and similar) can still show up once as out-of-date diagnostics. Check the file before acting on them.
 
 **Tests:** `python3 -m unittest discover -s plugin-markdown-lsp/tests`
 
@@ -401,7 +419,7 @@ plugin-memory-guard/              # memory-guard plugin — watch .claude/**, sa
 plugin-opencode-migrate/          # opencode-migrate plugin — Claude Code -> opencode migration skill
 plugin-mempalace-docker/          # mempalace-docker plugin — Dockerized MemPalace MCP + CLI + save hooks, GPU-aware
 plugin-ruby-lsp/                  # ruby-lsp plugin — ruby-lsp/RuboCop diagnostics + advisory Reek hook, Docker-first
-plugin-markdown-lsp/              # markdown-lsp plugin — rumdl LSP diagnostics, skill-derived fallback config, host-first
+plugin-markdown-lsp/              # markdown-lsp plugin — rumdl LSP diagnostics, skill-derived fallback config, Docker-first
 ```
 
 Each plugin owns its agents and skills directly — no shared root directories, no symlinks. To update an agent or skill, edit it in the plugin directory where it belongs (`plugin-dev/agents/`, `plugin-qa/skills/`, etc.).
