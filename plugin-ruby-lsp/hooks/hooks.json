@@ -1,0 +1,17 @@
+{
+  "description": "Runs Reek on Ruby files after Claude writes or edits them and feeds smells back as advisory context",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/reek_hook.py\"",
+            "timeout": 90
+          }
+        ]
+      }
+    ]
+  }
+}

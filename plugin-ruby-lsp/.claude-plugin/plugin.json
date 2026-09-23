@@ -1,0 +1,17 @@
+{
+  "name": "ruby-lsp",
+  "version": "0.1.0",
+  "description": "Ruby/Rails code intelligence for Claude Code — ruby-lsp with RuboCop diagnostics after every edit, advisory Reek smells via hook, Docker-first with host fallback",
+  "author": {
+    "name": "John Cyrill Corsanes",
+    "url": "https://github.com/jcchikikomori"
+  },
+  "homepage": "https://github.com/jcchikikomori/llm-agent-workflow",
+  "repository": "https://github.com/jcchikikomori/llm-agent-workflow.git",
+  "license": "MIT",
+  "keywords": ["ruby", "rails", "lsp", "ruby-lsp", "rubocop", "reek", "linting", "docker"],
+  "lspServers": "./.lsp.json",
+  "skills": [
+    "./skills/ruby-lsp"
+  ]
+}

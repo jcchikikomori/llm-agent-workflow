@@ -1,0 +1,37 @@
+---
+# Rails-tuned fallback, used by the ruby-lsp plugin ONLY when the project has
+# no .reek.yml / config.reek of its own. Aims at smells LLM-written code tends
+# to introduce (Feature Envy, long methods, deep nesting) while muting detectors
+# that fight Rails conventions.
+
+detectors:
+  IrresponsibleModule:
+    enabled: false
+  TooManyStatements:
+    max_statements: 10
+
+directories:
+  "app/controllers":
+    InstanceVariableAssumption:
+      enabled: false
+  "app/mailers":
+    InstanceVariableAssumption:
+      enabled: false
+  "app/helpers":
+    UtilityFunction:
+      enabled: false
+  "app/jobs":
+    UtilityFunction:
+      enabled: false
+  "db/migrate":
+    UtilityFunction:
+      enabled: false
+    TooManyStatements:
+      enabled: false
+    FeatureEnvy:
+      enabled: false
+
+exclude_paths:
+  - db/schema.rb
+  - vendor
+  - node_modules

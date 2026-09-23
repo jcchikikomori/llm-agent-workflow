@@ -1,0 +1,15 @@
+{
+  "ruby-lsp": {
+    "command": "${CLAUDE_PLUGIN_ROOT}/scripts/run-ruby-tool.sh",
+    "args": ["lsp"],
+    "extensionToLanguage": {
+      ".rb": "ruby",
+      ".rake": "ruby",
+      ".gemspec": "ruby",
+      ".ru": "ruby",
+      ".erb": "erb"
+    },
+    "transport": "stdio",
+    "maxRestarts": 3
+  }
+}

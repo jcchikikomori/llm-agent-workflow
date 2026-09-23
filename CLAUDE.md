@@ -53,6 +53,7 @@ All three must be kept in sync. Update them together whenever the version change
 - `plugin-memory-guard/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 - `plugin-opencode-migrate/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 - `plugin-mempalace-docker/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart (it vendors MemPalace hook scripts but is versioned independently of MemPalace).
+- `plugin-ruby-lsp/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 
 ### When to bump versions
 
@@ -124,6 +125,7 @@ This registers the marketplace from the GitHub repo. Claude Code reads `.claude-
 /plugin install memory-guard@llm-agent-workflow
 /plugin install opencode-migrate@llm-agent-workflow
 /plugin install mempalace-docker@llm-agent-workflow
+/plugin install ruby-lsp@llm-agent-workflow
 /plugin install token-saver@llm-agent-workflow
 /plugin install wandavision@llm-agent-workflow
 
@@ -155,6 +157,7 @@ Always reload after installing, updating, or switching plugins within the same s
 | `memory-guard` | behavior-control | SessionStart + PostToolUse hooks that watch `.claude/**`, root `CLAUDE.md`, and `docs/ticket-tracking/**` for changes, save them to memory, then remove or stash them per a one-time, per-project preference |
 | `opencode-migrate` | workflow-orchestration | Skill that migrates a Claude Code setup into opencode — global config, one repository, or a Claude Code plugin's own source — behind a plan-then-approve gate |
 | `mempalace-docker` | behavior-control | Runs MemPalace entirely from Docker — MCP server, CLI, and save hooks. Auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one palace in a named volume, mounts the current project, and auto-mines per project. **Replaces** the official `mempalace` plugin |
+| `ruby-lsp` | quality-enforcement | LSP + hook + skill — ruby-lsp (RuboCop diagnostics after every `.rb` edit), advisory Reek smells via PostToolUse, Docker-first wrapper with host fallback. Install **instead of** the official `ruby-lsp` plugin |
 | `token-saver` | behavior-control | Enforces token-efficient prompting and session hygiene |
 | `wandavision` | quality-enforcement | Deterministic image analysis via `mcp-vision` |
 | `metronome` | behavior-control | External — keeps workflows procedural and step-driven |
@@ -231,6 +234,23 @@ The `dev` and `qa` plugins cover **workflow orchestration** — how to plan, bui
 **Consolidating a split palace:** `scripts/migrate-host-palace.sh` reports `mempalace status` for both palaces first, backs the volume up to `~/.mempalace-backups/`, then either `--strategy remine` (default, additive) or `--strategy replace`. It never deletes `~/.mempalace`. Re-mining rather than merging is forced by upstream: the CLI has no export/import/merge verb, and a Chroma collection plus `knowledge_graph.sqlite3` does not union by copying files.
 
 **Attribution:** vendors MIT code from MemPalace — see `plugin-mempalace-docker/NOTICE`.
+
+---
+
+### ruby-lsp plugin
+
+**Purpose:** Cut lint-fix-relint loops on LLM-written Ruby/Rails code by surfacing RuboCop offenses and Reek smells at edit time.
+
+**How it works:**
+
+- `.lsp.json` registers ruby-lsp for `.rb`, `.rake`, `.gemspec`, `.ru` and `.erb`. ruby-lsp runs RuboCop from the bundle with the project's `.rubocop.yml`.
+- A `PostToolUse` hook (`Write|Edit|MultiEdit`) runs Reek and returns up to 10 smells as `additionalContext`. It is advisory only: it always exits 0 and prints nothing when the file is clean.
+- Both go through `scripts/run-ruby-tool.sh`. It tries Docker first (`docker compose run --rm --no-deps -T`, with the project mounted at its identical host path), then host `bundle exec`, then the global binary.
+- Docker is used only when the gem is in `Gemfile.lock`, because a container cannot `bundle exec` a gem that is missing from its bundle.
+- Overrides: `RUBY_LSP_PLUGIN_SERVICE`, `RUBY_LSP_PLUGIN_FORCE_HOST`, `RUBY_LSP_PLUGIN_FORCE_DOCKER`. The prefix avoids ruby-lsp's own `RUBY_LSP_*` variables.
+- The bundled `config/.reek.yml` is a Rails-tuned fallback, used only when the project has no Reek config.
+
+**Tests:** `python3 -m unittest discover -s plugin-ruby-lsp/tests`
 
 ---
 
@@ -361,6 +381,7 @@ plugin-gh-issue-to-pr/            # gh-issue-to-pr plugin — GitHub issue-to-me
 plugin-memory-guard/              # memory-guard plugin — watch .claude/**, save to memory, offer stash
 plugin-opencode-migrate/          # opencode-migrate plugin — Claude Code -> opencode migration skill
 plugin-mempalace-docker/          # mempalace-docker plugin — Dockerized MemPalace MCP + CLI + save hooks, GPU-aware
+plugin-ruby-lsp/                  # ruby-lsp plugin — ruby-lsp/RuboCop diagnostics + advisory Reek hook, Docker-first
 ```
 
 Each plugin owns its agents and skills directly — no shared root directories, no symlinks. To update an agent or skill, edit it in the plugin directory where it belongs (`plugin-dev/agents/`, `plugin-qa/skills/`, etc.).

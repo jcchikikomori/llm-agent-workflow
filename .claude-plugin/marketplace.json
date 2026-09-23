@@ -119,6 +119,12 @@
       "source": "./plugin-mempalace-docker",
       "description": "Runs MemPalace from Docker \u2014 auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one shared palace in a named volume, mounts the current project, and auto-mines it per project",
       "category": "behavior-control"
+    },
+    {
+      "name": "ruby-lsp",
+      "source": "./plugin-ruby-lsp",
+      "description": "Ruby/Rails code intelligence \u2014 ruby-lsp pushes RuboCop diagnostics after every edit, a hook adds advisory Reek smells, Docker-first with host fallback",
+      "category": "quality-enforcement"
     }
   ]
 }

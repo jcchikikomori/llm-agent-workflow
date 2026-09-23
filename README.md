@@ -61,6 +61,7 @@ Platform support: macOS, Linux, WSL, native Windows.
 | `token-saver` | behavior-control | Enforces token-efficient prompting and session hygiene |
 | `opencode-migrate` | workflow-orchestration | Migrates Claude Code setup into OpenCode |
 | `mempalace-docker` | behavior-control | Runs MemPalace through Docker with GPU-aware runtime selection |
+| `ruby-lsp` | quality-enforcement | ruby-lsp + RuboCop diagnostics after every Ruby edit, advisory Reek smells, Docker-first |
 | `wandavision` | quality-enforcement | Deterministic image analysis via `mcp-vision` |
 | `metronome` | behavior-control | Keeps workflows procedural and step-driven |
 | `discover` | product-quality | Turns ideas into evidence-backed PRDs |
@@ -173,6 +174,7 @@ Deep setup and internals live in each plugin README:
 - [`plugin-commit-guard/README.md`](plugin-commit-guard/README.md)
 - [`plugin-markdown-format/README.md`](plugin-markdown-format/README.md)
 - [`plugin-gh-issue-to-pr/README.md`](plugin-gh-issue-to-pr/README.md)
+- [`plugin-ruby-lsp/README.md`](plugin-ruby-lsp/README.md)
 
 ## Recommended Permissions
 
