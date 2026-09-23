@@ -1,0 +1,60 @@
+# Fallback rumdl config for the markdown-lsp plugin.
+#
+# Used only when the project has no rumdl or markdownlint config of its own
+# (scripts/run-rumdl.sh decides). Rules mirror the skills-md `markdown` skill.
+# The MD024/MD033/MD041 exceptions match plugin-markdown-format's
+# .markdownlint.json so the fixer and the linter never disagree.
+
+[global]
+line-length = 120
+# MD033: inline HTML is common in READMEs (badges, <picture>, <details>).
+# MD041: files may open with front matter or a badge row instead of an H1.
+disable = ["MD033", "MD041"]
+
+# Headings: ATX only, one H1, no skipped levels (MD001 on by default).
+[MD003]
+style = "atx"
+
+[MD024]
+siblings-only = true
+
+[MD025]
+level = 1
+
+# Lists: `-` bullets, `1.` for every ordered item, 2-space nesting.
+[MD004]
+style = "dash"
+
+[MD007]
+indent = 2
+
+[MD029]
+style = "one"
+
+# Code: always fenced with backticks. MD040 (language tag) is on by default.
+[MD046]
+style = "fenced"
+
+[MD048]
+style = "backtick"
+
+# Prose: 120 characters, never counted inside code blocks or tables.
+[MD013]
+line-length = 120
+code-blocks = false
+tables = false
+
+[MD012]
+maximum = 1
+
+# Emphasis: `_italic_`, `**bold**`.
+[MD049]
+style = "underscore"
+
+[MD050]
+style = "asterisk"
+
+# Links: no "click here" style text. MD034 (bare URLs) and MD045 (alt text)
+# are on by default.
+[MD059]
+prohibited-texts = ["click here", "here", "link", "more", "this"]

@@ -125,6 +125,12 @@
       "source": "./plugin-ruby-lsp",
       "description": "Ruby/Rails code intelligence \u2014 ruby-lsp pushes RuboCop diagnostics after every edit, a hook adds advisory Reek smells, Docker-first with host fallback",
       "category": "quality-enforcement"
+    },
+    {
+      "name": "markdown-lsp",
+      "source": "./plugin-markdown-lsp",
+      "description": "Markdown diagnostics \u2014 rumdl LSP pushes markdownlint-compatible offenses after every .md/.mdx edit, bundled config mirrors the skills-md markdown standards, host-first with Docker fallback",
+      "category": "quality-enforcement"
     }
   ]
 }

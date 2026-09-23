@@ -47,3 +47,6 @@ plugin-*/skills/*/evals/
 *.bak
 *.backup
 docs/
+
+# rumdl lint cache (markdown-lsp plugin)
+.rumdl_cache/

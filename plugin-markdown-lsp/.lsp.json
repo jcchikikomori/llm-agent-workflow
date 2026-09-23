@@ -1,0 +1,13 @@
+{
+  "rumdl": {
+    "command": "${CLAUDE_PLUGIN_ROOT}/scripts/run-rumdl.sh",
+    "args": ["server"],
+    "extensionToLanguage": {
+      ".md": "markdown",
+      ".markdown": "markdown",
+      ".mdx": "mdx"
+    },
+    "transport": "stdio",
+    "maxRestarts": 3
+  }
+}

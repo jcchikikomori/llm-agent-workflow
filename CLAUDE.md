@@ -54,6 +54,7 @@ All three must be kept in sync. Update them together whenever the version change
 - `plugin-opencode-migrate/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 - `plugin-mempalace-docker/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart (it vendors MemPalace hook scripts but is versioned independently of MemPalace).
 - `plugin-ruby-lsp/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
+- `plugin-markdown-lsp/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 
 ### When to bump versions
 
@@ -126,6 +127,7 @@ This registers the marketplace from the GitHub repo. Claude Code reads `.claude-
 /plugin install opencode-migrate@llm-agent-workflow
 /plugin install mempalace-docker@llm-agent-workflow
 /plugin install ruby-lsp@llm-agent-workflow
+/plugin install markdown-lsp@llm-agent-workflow
 /plugin install token-saver@llm-agent-workflow
 /plugin install wandavision@llm-agent-workflow
 
@@ -158,6 +160,7 @@ Always reload after installing, updating, or switching plugins within the same s
 | `opencode-migrate` | workflow-orchestration | Skill that migrates a Claude Code setup into opencode — global config, one repository, or a Claude Code plugin's own source — behind a plan-then-approve gate |
 | `mempalace-docker` | behavior-control | Runs MemPalace entirely from Docker — MCP server, CLI, and save hooks. Auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one palace in a named volume, mounts the current project, and auto-mines per project. **Replaces** the official `mempalace` plugin |
 | `ruby-lsp` | quality-enforcement | LSP + hook + skill — ruby-lsp (RuboCop diagnostics after every `.rb` edit), advisory Reek smells via PostToolUse, Docker-first wrapper with host fallback. Install **instead of** the official `ruby-lsp` plugin |
+| `markdown-lsp` | quality-enforcement | LSP + skill — rumdl pushes markdownlint-compatible diagnostics after every `.md`/`.mdx` edit; bundled config mirrors `skills-md:markdown`, project config wins. Host-first wrapper with Docker, `uvx`, `npx` fallbacks. Complements `markdown-format` |
 | `token-saver` | behavior-control | Enforces token-efficient prompting and session hygiene |
 | `wandavision` | quality-enforcement | Deterministic image analysis via `mcp-vision` |
 | `metronome` | behavior-control | External — keeps workflows procedural and step-driven |
@@ -251,6 +254,22 @@ The `dev` and `qa` plugins cover **workflow orchestration** — how to plan, bui
 - The bundled `config/.reek.yml` is a Rails-tuned fallback, used only when the project has no Reek config.
 
 **Tests:** `python3 -m unittest discover -s plugin-ruby-lsp/tests`
+
+---
+
+### markdown-lsp plugin
+
+**Purpose:** Report the Markdown lint offenses that `markdown-format` can't auto-fix, so Claude sees and fixes them at edit time.
+
+**How it works:**
+
+- `.lsp.json` registers [rumdl](https://github.com/rvben/rumdl) (`rumdl server`) for `.md`, `.markdown` and `.mdx`.
+- `scripts/run-rumdl.sh` tries host `rumdl` first, then `docker run -i ghcr.io/rvben/rumdl`, then `uvx rumdl`, then `npx --yes rumdl`. Host goes first because rumdl is a standalone binary with no project dependency, so a container adds latency and no parity.
+- Config: a project `.rumdl.toml`, `.config/rumdl.toml`, `[tool.rumdl]` or `.markdownlint.*` (searched upward to the `.git` boundary) wins. Otherwise the wrapper passes the bundled `config/rumdl.toml`, which mirrors the `skills-md:markdown` standards. MD033, MD041 and MD024 match `markdown-format`'s config.
+- Overrides: `MARKDOWN_LSP_PLUGIN_CONFIG`, `MARKDOWN_LSP_PLUGIN_IMAGE`, `MARKDOWN_LSP_PLUGIN_FORCE_HOST`, `MARKDOWN_LSP_PLUGIN_FORCE_DOCKER`.
+- No hook. The LSP already reports after each edit, and `markdown-format` already fixes.
+
+**Tests:** `python3 -m unittest discover -s plugin-markdown-lsp/tests`
 
 ---
 
@@ -382,6 +401,7 @@ plugin-memory-guard/              # memory-guard plugin — watch .claude/**, sa
 plugin-opencode-migrate/          # opencode-migrate plugin — Claude Code -> opencode migration skill
 plugin-mempalace-docker/          # mempalace-docker plugin — Dockerized MemPalace MCP + CLI + save hooks, GPU-aware
 plugin-ruby-lsp/                  # ruby-lsp plugin — ruby-lsp/RuboCop diagnostics + advisory Reek hook, Docker-first
+plugin-markdown-lsp/              # markdown-lsp plugin — rumdl LSP diagnostics, skill-derived fallback config, host-first
 ```
 
 Each plugin owns its agents and skills directly — no shared root directories, no symlinks. To update an agent or skill, edit it in the plugin directory where it belongs (`plugin-dev/agents/`, `plugin-qa/skills/`, etc.).
