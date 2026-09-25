@@ -103,6 +103,23 @@ Prefer dispatching to the matching agent over free-form work.
 - This is a self-check, not new tooling — no ping script, no eval harness. State which
   agent (if any) applies before proceeding, or state that none fits.
 
+## Roadmap Upkeep (Mandatory)
+
+`ROADMAP.md` at the repo root is the public tracker for multi-phase work (today: the
+opencode port on `feature/port-to-opencode`). Keep it current in the same change as the
+work it describes — never as a later catch-up edit.
+
+- **Task done:** tick its checklist item under "Phase details".
+- **Phase done:** update its row in "Status at a glance" and the "Last updated" date.
+- **Scope change:** when a plugin's target support level, a breaking change, a known limit,
+  or the task list changes, edit the matching section too.
+- **Claims match code:** when a decision changes behavior the roadmap describes (install,
+  uninstall, support level), fix that line in the same change.
+- **Before drafting a phase commit message:** check `git diff --cached -- ROADMAP.md`. A
+  phase commit without a roadmap update is incomplete.
+- **Keep it public-facing:** plain language, no Claude internals (agent names, scratchpad
+  paths, links into the gitignored `docs/`).
+
 ## Using This as a Custom Marketplace
 
 ### Install the marketplace in Claude Code
