@@ -1,6 +1,7 @@
 # token-saver
 
-Enforces token-saving techniques for Claude Code — plan mode guidance, proactive compaction, specific prompts, subagent delegation, CLAUDE.md size limits, and effort advice.
+Enforces token-saving techniques for Claude Code — plan mode guidance, proactive compaction, specific prompts,
+subagent delegation, CLAUDE.md size limits, and effort advice.
 
 Based on [Bozhidar Kamenski's 12 techniques](https://medium.com/@bozhidarkamenski/how-to-save-tokens-in-claude-code-12-techniques-that-actually-work-fac05e4abf1a).
 
@@ -19,11 +20,11 @@ Based on [Bozhidar Kamenski's 12 techniques](https://medium.com/@bozhidarkamensk
 The `token-saver` skill provides guidance on all 6 techniques:
 
 1. **Plan first** — Suggest planning before coding to prevent wasted exploration
-2. **Compact proactively** — Suggest `/compact` after 5+ file reads or exploration phases
-3. **Be specific** — Ask for file paths, line numbers, function names
-4. **Delegate verbose work** — Use subagents for output-heavy tasks
-5. **Keep CLAUDE.md small** — Under 3000 chars, move details to skills/memory
-6. **Lower effort for mechanical tasks** — Don't use maximum effort for formatting/renaming
+1. **Compact proactively** — Suggest `/compact` after 5+ file reads or exploration phases
+1. **Be specific** — Ask for file paths, line numbers, function names
+1. **Delegate verbose work** — Use subagents for output-heavy tasks
+1. **Keep CLAUDE.md small** — Under 3000 chars, move details to skills/memory
+1. **Lower effort for mechanical tasks** — Don't use maximum effort for formatting/renaming
 
 ## Install
 
@@ -34,7 +35,8 @@ The `token-saver` skill provides guidance on all 6 techniques:
 
 ## Using the skill in your project
 
-The hooks work automatically once installed. For the behavioral guidance to take effect, reference the skill in your project's custom instructions.
+The hooks work automatically once installed. For the behavioral guidance to take effect, reference the skill in your
+project's custom instructions.
 
 ### Option A: Load via CLAUDE.md
 
@@ -68,7 +70,8 @@ If you have other skills installed, you can reference token-saver by name in you
 
 ### What NOT to do
 
-Don't copy the entire SKILL.md into CLAUDE.md — that defeats the purpose (CLAUDE.md should stay under 3000 chars). One-liner references are enough; Claude loads the full skill when it sees the reference.
+Don't copy the entire SKILL.md into CLAUDE.md — that defeats the purpose (CLAUDE.md should stay under 3000 chars).
+One-liner references are enough; Claude loads the full skill when it sees the reference.
 
 ## Configuration
 
@@ -86,21 +89,30 @@ Edit `config/vague-patterns.json` to customize which prompts are blocked:
 - `patterns` — Exact phrases that trigger the block
 - `whitelisted_prefixes` — Prefixes that allow short follow-ups (e.g. "fix login flow" is OK)
 
+The opencode port reads the installed copy of this file, under `llm-agent-workflow/token-saver/config/` in the
+install scope (for example `~/.config/opencode/llm-agent-workflow/token-saver/config/vague-patterns.json`). Edit that
+copy, or edit this one and reinstall with `./setup-opencode.sh --global --plugin token-saver`. The file is read on
+every prompt. When it is missing or not valid, the port uses its built-in defaults and logs one warning per
+process for each kind of problem.
+
 ### CLAUDE.md size limit
 
-The default limit is 3000 characters (~500 words). To change it, edit `hooks/claude_md_guard.py` and update the `MAX_CHARS` constant.
+The default limit is 3000 characters (~500 words). To change it, edit `hooks/claude_md_guard.py` and update the
+`MAX_CHARS` constant.
 
 ### Compact interval
 
-The default interval is 15 minutes. To change it, edit `hooks/compact_reminder.py` and update `COMPACT_INTERVAL_SECONDS`.
+The default interval is 15 minutes. To change it, edit `hooks/compact_reminder.py` and update
+`COMPACT_INTERVAL_SECONDS`.
 
 ## How it works
 
 ### prompt-quality hook
 
-Intercepts every user prompt before Claude sees it. If the prompt matches a vague pattern (and isn't whitelisted), it blocks with guidance on how to be specific:
+Intercepts every user prompt before Claude sees it. If the prompt matches a vague pattern (and isn't whitelisted), it
+blocks with guidance on how to be specific:
 
-```
+```text
 [token-saver] BLOCKED: This prompt is too vague — it will cost extra tokens
 for Claude to figure out what you mean.
 
@@ -113,13 +125,24 @@ Please provide specifics:
 
 ### compact-reminder hook
 
-Tracks timestamps in `~/.claude/.token-saver/`. After ~15 minutes, prints a reminder to consider `/compact`. Always exits 0 — never blocks.
+Tracks timestamps in `~/.claude/.token-saver/`. After ~15 minutes, prints a reminder to consider `/compact`. Always
+exits 0 — never blocks.
 
 ### claude-md-guard hook
 
-Checks CLAUDE.md size at session start. Warns (never blocks) if it exceeds 3000 characters, with suggestions to move content to skills or memory files.
+Checks CLAUDE.md size at session start. Warns (never blocks) if it exceeds 3000 characters, with suggestions to move
+content to skills or memory files.
 
 ## Version History
+
+### 1.1.0
+
+- opencode port, payload resolver v2: the port reads `config/vague-patterns.json` from the installed payload (env
+  root, then project, then global config dir, then the dev layout). Before, it looked next to its own file, which
+  does not exist after `setup-opencode.sh` installs it, so it always used the built-in defaults.
+- opencode port: without the payload, or with a patterns file that cannot be read or is not valid, it uses the
+  built-in defaults and logs one `warn` per process for each kind of problem. The prompt check never throws.
+- The Claude Code hooks are unchanged.
 
 ### 1.0.0
 

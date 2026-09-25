@@ -1,6 +1,6 @@
 ---
 name: memory-guard
-description: Guides Claude through the memory-guard flow when a watched .claude/**, root CLAUDE.md, or docs/ticket-tracking/** path is flagged by the memory-guard hooks — save the change to memory, then apply the project's remove/stash preference (asking once, ever, per project, if none is set yet) via the single apply_action.py script.
+description: Guides Claude when memory-guard hooks flag a watched .claude/**, root CLAUDE.md or docs/ticket-tracking/** path — save the change to memory, then apply the project's remove/stash preference (asked once per project if unset) via apply_action.py.
 ---
 
 # memory-guard

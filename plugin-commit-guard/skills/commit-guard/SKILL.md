@@ -1,6 +1,6 @@
 ---
 name: commit-guard
-description: Guides Claude through the commit-guard delegation flow when a git command that writes a commit message is intercepted — show the staged work, hand the exact command to the user to run in their own terminal, arm the bounded watcher, then verify what actually landed before claiming success.
+description: Guides Claude when commit-guard intercepts a git command that writes a commit message — show the staged work, hand the exact command to the user to run in their terminal, arm the bounded watcher, then verify what landed before claiming success.
 ---
 
 # commit-guard

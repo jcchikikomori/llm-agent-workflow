@@ -1,0 +1,37 @@
+// <payload-resolver v2> keep byte-identical; checked by scripts/opencode/tests/test_resolver_drift.py
+// requires: existsSync (node:fs), homedir (node:os), dirname + join (node:path), fileURLToPath (node:url)
+const PAYLOAD_NAMESPACE = "llm-agent-workflow"
+const PAYLOAD_ROOT_ENV = "LLM_AGENT_WORKFLOW_PAYLOAD_ROOT"
+const PROJECT_CONFIG_DIR = ".opencode"
+const GLOBAL_CONFIG_SUBDIR = "opencode"
+
+interface PayloadQuery {
+  pluginId: string
+  marker: string
+  directory: string
+  worktree: string
+}
+
+interface PayloadResolution {
+  root: string | null
+  searched: string[]
+}
+
+function payloadCandidates(query: PayloadQuery): string[] {
+  const override = process.env[PAYLOAD_ROOT_ENV]
+  if (override) return [join(override, query.pluginId)]
+  const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
+  const projectRoots = [...new Set([query.directory, query.worktree].filter(Boolean))]
+  return [
+    ...projectRoots.map((root) => join(root, PROJECT_CONFIG_DIR, PAYLOAD_NAMESPACE, query.pluginId)),
+    join(configHome, GLOBAL_CONFIG_SUBDIR, PAYLOAD_NAMESPACE, query.pluginId),
+    join(dirname(fileURLToPath(import.meta.url)), ".."),
+  ]
+}
+
+function resolvePayloadRoot(query: PayloadQuery): PayloadResolution {
+  const searched = payloadCandidates(query)
+  const root = searched.find((dir) => existsSync(join(dir, query.marker))) ?? null
+  return { root, searched }
+}
+// </payload-resolver>

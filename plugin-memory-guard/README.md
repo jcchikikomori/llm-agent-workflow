@@ -17,9 +17,9 @@ ever, per project**.
 - Either way, Claude is instructed to:
   1. Judge whether the change is memory-worthy (skips pure formatting/typo
      noise).
-  2. Save it — via the `mempalace` MCP tools if they're available in the
+  1. Save it — via the `mempalace` MCP tools if they're available in the
      session, otherwise the existing file-based auto-memory system.
-  3. **First time ever for this project**: ask the user once, via
+  1. **First time ever for this project**: ask the user once, via
      `AskUserQuestion`, whether watched changes should be **Removed**
      (deleted from disk — the content is already in memory) or **Stashed**
      (`git stash push -u --`, scoped only to the flagged paths). The answer
@@ -80,10 +80,13 @@ python3 <plugin path>/scripts/reset_preference.py --repo-root /path/to/repo
 | State | `~/.claude/.memory-guard/session_<id>.json` | Per-session flagged/resolved path tracking |
 | State | `~/.claude/.memory-guard/project-prefs/<hash>.json` | Per-project remove/stash preference, persists across sessions |
 
+On opencode, the port's injected commands set `MEMORY_GUARD_RUNTIME=opencode`, so the same state lives under
+`~/.config/opencode/.memory-guard/` instead.
+
 ## Known limitations
 
 - No filesystem watcher: a file edited in another editor mid-session, with
-  Claude making no tool calls, is only caught at the *next* `SessionStart`,
+  Claude making no tool calls, is only caught at the _next_ `SessionStart`,
   not live.
 - Gitignored watched paths (e.g. a gitignored `.claude/settings.local.json`)
   are invisible to `git status`, so stale-change detection has a blind spot
@@ -97,6 +100,35 @@ python3 <plugin path>/scripts/reset_preference.py --repo-root /path/to/repo
 
 ## Changelog
 
+### 1.1.0
+
+- **Resolver v2 for the opencode port.** The port finds its payload (`hooks/`, `scripts/`, `config/`) in this order:
+  the `LLM_AGENT_WORKFLOW_PAYLOAD_ROOT` env root, the project's `.opencode/llm-agent-workflow/memory-guard/`, the
+  global `~/.config/opencode/llm-agent-workflow/memory-guard/`, then the dev layout. The old `import.meta.dir` path
+  broke once `plugins/` was a symlink. Without a payload, the instruction says the payload is missing (reinstall with
+  `./setup-opencode.sh --global --plugin memory-guard`) instead of naming scripts, and one warning is logged per
+  process.
+- **`MEMORY_GUARD_RUNTIME` replaces the `.exists()` heuristic** in `apply_action.py`, `set_preference.py`,
+  `reset_preference.py` and `mark_resolved.py`. The opencode port prefixes every injected command with
+  `MEMORY_GUARD_RUNTIME=opencode`. That selects `~/.config/opencode/.memory-guard/` and maps `CLAUDE.md` to
+  `AGENTS.md` in the loaded watched files; `config/watched-paths.json` itself still lists `CLAUDE.md`. Unset, the
+  Claude Code defaults hold, so state is back in `~/.claude/.memory-guard/` even where `~/.config/opencode` exists.
+  The heuristic had sent the scripts' state there under Claude Code too, away from the hooks' state. **Don't export
+  `MEMORY_GUARD_RUNTIME` globally** (shell profile, Claude Code settings): the Claude Code hooks would then run in
+  opencode mode, with the wrong state dir and `AGENTS.md` watched instead of `CLAUDE.md`.
+- A `watched-paths.json` that is valid JSON but not an object (`[]`, `null`, a string) now falls back to the
+  defaults, as the opencode port does, instead of crashing the Python with an `AttributeError`.
+- The opencode instruction names the `question` tool instead of `AskUserQuestion`.
+- Shorter skill description: 246 bytes, within opencode's 250-byte limit.
+- **Upgrade note:** a Claude Code project whose preference was written under the old heuristic (into
+  `~/.config/opencode/.memory-guard/project-prefs/`) is asked remove-or-stash once more. Copying those files over
+  avoids that; `-n` keeps any preference already on the Claude side:
+
+  ```bash
+  mkdir -p ~/.claude/.memory-guard/project-prefs
+  cp -n ~/.config/opencode/.memory-guard/project-prefs/*.json ~/.claude/.memory-guard/project-prefs/
+  ```
+
 ### 1.0.0
 
 Major release for repository rename to `llm-agent-workflow`.
@@ -106,7 +138,10 @@ Major release for repository rename to `llm-agent-workflow`.
 
 ### 0.3.0
 
-Added OpenCode TypeScript ports using `experimental.chat.system.transform` (SessionStart) and `event(file.edited)` (PostToolUse). Python scripts now detect `~/.config/opencode/` vs `~/.claude/` and write state to whichever exists. Added `/memory-guard` slash command (`commands/memory-guard.md`) and OpenCode npm package manifest.
+Added OpenCode TypeScript ports using `experimental.chat.system.transform` (SessionStart) and
+`event(file.edited)` (PostToolUse). Python scripts now detect `~/.config/opencode/` vs `~/.claude/` and write
+state to whichever exists. Added `/memory-guard` slash command (`commands/memory-guard.md`) and OpenCode npm
+package manifest.
 
 ### 0.2.1
 

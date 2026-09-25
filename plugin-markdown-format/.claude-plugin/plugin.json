@@ -1,6 +1,6 @@
 {
   "name": "markdown-format",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Auto-formats .md files after Claude writes or edits them using markdownlint-cli2 --fix — silently corrects LLM-generated markdown errors",
   "author": {
     "name": "John Cyrill Corsanes",

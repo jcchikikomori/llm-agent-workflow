@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "payload_namespace": "llm-agent-workflow",
+  "plugin_id_source": "plugin.json#name",
+  "extra_sources": {
+    "wandavision": {
+      "manifest": "plugin-wandavision/.claude-plugin/plugin.json",
+      "plugins": ["wandavision/opencode-plugin/*.ts"],
+      "skills": ["wandavision/skill/*"]
+    }
+  },
+  "exclude_plugins": ["opencode-migrate"],
+  "exclude_agents": ["plugin-env-guard/agents/secret-exposure-auditor.md"],
+  "payloads": {
+    "commit-guard": { "include": ["hooks"], "marker": "hooks/commit_guard_hook.py" },
+    "memory-guard": { "include": ["hooks", "scripts", "config"], "marker": "scripts/apply_action.py" },
+    "markdown-format": { "include": ["config"], "marker": "config/.markdownlint.json" },
+    "token-saver": { "include": ["config"], "marker": "config/vague-patterns.json" },
+    "ruby-lsp": { "include": ["hooks", "scripts", "config"], "marker": "hooks/reek_hook.py" },
+    "markdown-lsp": { "include": ["scripts", "config"], "marker": "scripts/run-rumdl.sh" },
+    "mempalace-docker": { "include": ["hooks", "scripts"], "exclude": ["hooks/vendor"], "marker": "scripts/mark_mined.py" },
+    "qa": {
+      "include": ["skills/coverage-quality/hooks", "skills/coverage-quality/scripts"],
+      "marker": "skills/coverage-quality/hooks/post-test-coverage.sh"
+    }
+  },
+  "guard": {
+    "blocked_origin_repo_names": ["skills-md"],
+    "blocked_scope_dirs": ["skills", "skill"],
+    "writable_scope_dirs": ["plugins", "agents", "commands", "llm-agent-workflow"],
+    "submodules": "approval"
+  },
+  "hand_written_agent_prefix": "opencode-"
+}

@@ -6,17 +6,24 @@ Path matching: which files under a repo count as "watched" (.claude/**,
 root CLAUDE.md, docs/ticket-tracking/**), loaded from a small editable
 config file so the user can adjust the list without touching Python.
 
-Session state: a per-session JSON file under ~/.claude/.memory-guard/ tracks
-which watched paths have already been flagged this session, so the
-PostToolUse hook doesn't re-prompt on every single edit to the same file.
-Guarded by flock since parallel tool calls in one turn can run concurrently.
+Runtime: MEMORY_GUARD_RUNTIME, read once at import, picks the state dir and
+the watched doc name. The opencode port prefixes every command it injects
+with MEMORY_GUARD_RUNTIME=opencode, which selects
+~/.config/opencode/.memory-guard/ and maps CLAUDE.md to AGENTS.md in the
+loaded watched files (the config file itself still lists CLAUDE.md). Unset,
+or any other value, keeps the Claude Code defaults: ~/.claude/.memory-guard/
+and CLAUDE.md. The runtime is never guessed from which config dirs exist.
+
+Session state: a per-session JSON file under STATE_DIR tracks which watched
+paths have already been flagged this session, so the PostToolUse hook
+doesn't re-prompt on every single edit to the same file. Guarded by flock
+since parallel tool calls in one turn can run concurrently.
 
 Project preference: a separate, session-independent file under
-~/.claude/.memory-guard/project-prefs/ records the "remove" or "stash"
-choice for a given repo the first (and only) time it's asked, so later
-sessions never ask again for that project. Deliberately stored outside the
-repo (never under its .claude/) so writing it can't itself trigger a watched-
-path flag.
+STATE_DIR/project-prefs/ records the "remove" or "stash" choice for a given
+repo the first (and only) time it's asked, so later sessions never ask
+again for that project. Deliberately stored outside the repo (never under
+its .claude/) so writing it can't itself trigger a watched-path flag.
 """
 
 import fcntl
@@ -29,16 +36,26 @@ import subprocess
 import time
 from pathlib import Path
 
-STATE_DIR = Path.home() / ".claude" / ".memory-guard"
+RUNTIME_ENV = "MEMORY_GUARD_RUNTIME"
+OPENCODE_RUNTIME = "opencode"
+IS_OPENCODE = os.environ.get(RUNTIME_ENV) == OPENCODE_RUNTIME
+
+CLAUDE_DOC_NAME = "CLAUDE.md"
+OPENCODE_DOC_NAME = "AGENTS.md"
+
+if IS_OPENCODE:
+    STATE_DIR = Path.home() / ".config" / "opencode" / ".memory-guard"
+else:
+    STATE_DIR = Path.home() / ".claude" / ".memory-guard"
 PROJECT_PREFS_DIR = STATE_DIR / "project-prefs"
 
 DEFAULT_WATCHED_DIRS = [".claude", "docs/ticket-tracking"]
-DEFAULT_WATCHED_FILES = ["CLAUDE.md"]
+DEFAULT_WATCHED_FILES = [CLAUDE_DOC_NAME]
 
 _SESSION_KEY_PATTERN = re.compile(r"[^A-Za-z0-9._-]")
 
 # Opportunistic cleanup: on ~10% of invocations, delete session state files
-# older than this many days, so ~/.claude/.memory-guard/ doesn't grow forever.
+# older than this many days, so STATE_DIR doesn't grow forever.
 GC_PROBABILITY = 0.1
 GC_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
@@ -52,11 +69,20 @@ def plugin_root() -> Path:
 
 
 def load_watched_patterns() -> "tuple[list[str], list[str]]":
-    """Returns (watched_dirs, watched_files). Falls back to defaults on any
-    missing/malformed config so a bad edit never disables the whole plugin."""
+    """Returns (watched_dirs, watched_files) for this runtime. Falls back to
+    defaults on any missing/malformed config so a bad edit never disables
+    the whole plugin."""
+    dirs, files = _configured_watched_patterns()
+    return dirs, _runtime_doc_names(files)
+
+
+def _configured_watched_patterns() -> "tuple[list[str], list[str]]":
     config_path = plugin_root() / "config" / "watched-paths.json"
     try:
         data = json.loads(config_path.read_text())
+        if not isinstance(data, dict):
+            # Valid JSON that is not an object ([], null, "x"): defaults, as in the opencode port.
+            raise ValueError("watched-paths.json must hold a JSON object")
         dirs = data.get("watched_dirs")
         files = data.get("watched_files")
         if not isinstance(dirs, list) or not isinstance(files, list):
@@ -66,6 +92,14 @@ def load_watched_patterns() -> "tuple[list[str], list[str]]":
         return dirs, files
     except (OSError, ValueError, json.JSONDecodeError):
         return DEFAULT_WATCHED_DIRS, DEFAULT_WATCHED_FILES
+
+
+def _runtime_doc_names(files: "list[str]") -> "list[str]":
+    """On opencode the root doc is AGENTS.md: CLAUDE.md maps to it, as in the
+    opencode port. Claude Code keeps the configured names."""
+    if not IS_OPENCODE:
+        return files
+    return [OPENCODE_DOC_NAME if f == CLAUDE_DOC_NAME else f for f in files]
 
 
 def repo_root_for(cwd: str) -> "str | None":

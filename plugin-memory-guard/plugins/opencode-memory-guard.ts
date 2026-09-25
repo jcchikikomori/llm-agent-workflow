@@ -17,9 +17,18 @@
  * Code hooks): a memory save must land before any deletion, and only the
  * model can judge memory-worthiness and run the one-time per-project ask.
  *
- * State/preference files live under ~/.config/opencode/.memory-guard/
- * (previously the Claude Code config dir); the Python scripts in scripts/
- * check both paths at module load so the two runtimes can share state.
+ * The scripts ship as a payload (hooks/, scripts/, config/), found by the
+ * resolver block below: the env root, then the project, then the global
+ * config dir, then the dev layout. Every injected command runs under
+ * MEMORY_GUARD_RUNTIME=opencode, which makes the Python side use this port's
+ * state dir (~/.config/opencode/.memory-guard/) and watch AGENTS.md where the
+ * config lists the Claude Code doc name, as this port does. Without the env,
+ * the Python side keeps the Claude Code defaults.
+ *
+ * If no payload is found, the resolver fails, or the payload's
+ * apply_action.py is gone when an instruction is built, the instruction says
+ * the payload is missing instead of naming script commands, and one warning
+ * is logged per process. The factory and the hooks never throw.
  */
 import type { Plugin } from "@opencode-ai/plugin"
 import { createHash } from "node:crypto"
@@ -34,18 +43,25 @@ import {
   writeFileSync,
 } from "node:fs"
 import { homedir } from "node:os"
-import path from "node:path"
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { fileURLToPath } from "node:url"
 
 // --- Module-level constants ------------------------------------------------
 
-// Plugin root = the plugin-memory-guard directory (this file lives in plugins/).
-const pluginRoot = path.resolve(import.meta.dir, "..")
+const PLUGIN_ID = "memory-guard"
+// The apply step every instruction names; the rest of scripts/ sits beside it.
+const PAYLOAD_MARKER = "scripts/apply_action.py"
+const REINSTALL = `./setup-opencode.sh --global --plugin ${PLUGIN_ID}`
+// Goes into an instruction in place of the script commands when the payload is missing.
+const PAYLOAD_MISSING = `the ${PLUGIN_ID} payload is missing; reinstall with ${REINSTALL}`
+const NO_SCRIPTS_HINT = `Instructions name no scripts. Reinstall with ${REINSTALL}`
 
-// Claude Code stored state under the Claude Code config dir; OpenCode uses its
-// own config dir. The Python scripts in scripts/ check both and fall back to
-// the Claude Code path, so the two runtimes can share state.
-const STATE_DIR = path.join(homedir(), ".config", "opencode", ".memory-guard")
-const SCRIPTS_DIR = path.join(pluginRoot, "scripts")
+// Prefix of every injected python3 command: the Python side then picks the
+// OpenCode state dir and doc name instead of the Claude Code defaults.
+const RUNTIME_PREFIX = "MEMORY_GUARD_RUNTIME=opencode"
+
+// OpenCode state dir; the Python scripts use the same one under RUNTIME_PREFIX.
+const STATE_DIR = join(homedir(), ".config", "opencode", ".memory-guard")
 
 const DEFAULT_WATCHED_DIRS = [".claude", "docs/ticket-tracking"]
 
@@ -63,10 +79,59 @@ interface WatchedPatterns {
   files: string[]
 }
 
+// <payload-resolver v2> keep byte-identical; checked by scripts/opencode/tests/test_resolver_drift.py
+// requires: existsSync (node:fs), homedir (node:os), dirname + join (node:path), fileURLToPath (node:url)
+const PAYLOAD_NAMESPACE = "llm-agent-workflow"
+const PAYLOAD_ROOT_ENV = "LLM_AGENT_WORKFLOW_PAYLOAD_ROOT"
+const PROJECT_CONFIG_DIR = ".opencode"
+const GLOBAL_CONFIG_SUBDIR = "opencode"
+
+interface PayloadQuery {
+  pluginId: string
+  marker: string
+  directory: string
+  worktree: string
+}
+
+interface PayloadResolution {
+  root: string | null
+  searched: string[]
+}
+
+function payloadCandidates(query: PayloadQuery): string[] {
+  const override = process.env[PAYLOAD_ROOT_ENV]
+  if (override) return [join(override, query.pluginId)]
+  const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
+  const projectRoots = [...new Set([query.directory, query.worktree].filter(Boolean))]
+  return [
+    ...projectRoots.map((root) => join(root, PROJECT_CONFIG_DIR, PAYLOAD_NAMESPACE, query.pluginId)),
+    join(configHome, GLOBAL_CONFIG_SUBDIR, PAYLOAD_NAMESPACE, query.pluginId),
+    join(dirname(fileURLToPath(import.meta.url)), ".."),
+  ]
+}
+
+function resolvePayloadRoot(query: PayloadQuery): PayloadResolution {
+  const searched = payloadCandidates(query)
+  const root = searched.find((dir) => existsSync(join(dir, query.marker))) ?? null
+  return { root, searched }
+}
+// </payload-resolver>
+
+// One payload warning per process (no payload, a resolver failure, or the
+// marker gone after start), however many instances or instructions hit it.
+let payloadWarningLogged = false
+
 // --- Watched-path matching ------------------------------------------------
 
-function loadWatchedPatterns(): WatchedPatterns {
-  const configPath = path.join(pluginRoot, "config", "watched-paths.json")
+function defaultPatterns(): WatchedPatterns {
+  return { dirs: [...DEFAULT_WATCHED_DIRS], files: [OPENCODE_DOC_NAME] }
+}
+
+// Read on every call, so an edited, removed or re-created config applies to
+// the next check. Without a payload root the defaults apply.
+function loadWatchedPatterns(payloadRoot: string | null): WatchedPatterns {
+  if (payloadRoot === null) return defaultPatterns()
+  const configPath = join(payloadRoot, "config", "watched-paths.json")
   try {
     const data = JSON.parse(readFileSync(configPath, "utf8")) as {
       watched_dirs?: unknown
@@ -89,10 +154,10 @@ function loadWatchedPatterns(): WatchedPatterns {
   } catch {
     // fall through to defaults
   }
-  return { dirs: [...DEFAULT_WATCHED_DIRS], files: [OPENCODE_DOC_NAME] }
+  return defaultPatterns()
 }
 
-function isWatched(relPath: string, patterns: WatchedPatterns = loadWatchedPatterns()): boolean {
+function isWatched(relPath: string, patterns: WatchedPatterns): boolean {
   if (patterns.files.includes(relPath)) return true
   for (const dir of patterns.dirs) {
     const d = dir.replace(/\/+$/, "")
@@ -109,12 +174,12 @@ function sanitizeSessionID(sessionID: string): string {
 }
 
 function stateFilePath(sessionID: string): string {
-  return path.join(STATE_DIR, `session_${sanitizeSessionID(sessionID)}.json`)
+  return join(STATE_DIR, `session_${sanitizeSessionID(sessionID)}.json`)
 }
 
 function projectPrefPath(repoRoot: string): string {
   const key = createHash("sha256").update(realpathSync(repoRoot)).digest("hex").slice(0, 16)
-  return path.join(STATE_DIR, "project-prefs", `${key}.json`)
+  return join(STATE_DIR, "project-prefs", `${key}.json`)
 }
 
 function readProjectPreference(repoRoot: string): "remove" | "stash" | null {
@@ -173,7 +238,7 @@ function maybeGcOldSessions(): void {
   if (!existsSync(STATE_DIR)) return
   const cutoff = Date.now() / 1000 - GC_MAX_AGE_SECONDS
   for (const entry of readdirSync(STATE_DIR)) {
-    const p = path.join(STATE_DIR, entry)
+    const p = join(STATE_DIR, entry)
     try {
       if (statSync(p).mtimeMs / 1000 < cutoff) rmSync(p, { recursive: true })
     } catch {
@@ -186,22 +251,22 @@ function maybeGcOldSessions(): void {
 
 function relpathOrNone(filePath: string, cwd: string, repoRoot: string): string | null {
   if (!filePath) return null
-  const abs = path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath)
+  const abs = isAbsolute(filePath) ? filePath : join(cwd, filePath)
   let real: string
   try {
     real = realpathSync(abs)
   } catch {
-    real = path.resolve(abs)
+    real = resolve(abs)
   }
   let root: string
   try {
     root = realpathSync(repoRoot)
   } catch {
-    root = path.resolve(repoRoot)
+    root = resolve(repoRoot)
   }
-  const rel = path.relative(root, real)
-  if (rel.startsWith("..") || path.isAbsolute(rel)) return null
-  return rel.split(path.sep).join("/")
+  const rel = relative(root, real)
+  if (rel.startsWith("..") || isAbsolute(rel)) return null
+  return rel.split(sep).join("/")
 }
 
 function parsePorcelainPaths(output: string): string[] {
@@ -219,20 +284,41 @@ function parsePorcelainPaths(output: string): string[] {
 
 // --- Instruction text ------------------------------------------------------
 
-function firstTimeInstruction(
-  kind: "start" | "edit",
-  paths: string[],
-  sessionID: string,
-  repoRoot: string,
-): string {
-  const applyActionPath = path.join(SCRIPTS_DIR, "apply_action.py")
-  const setPreferencePath = path.join(SCRIPTS_DIR, "set_preference.py")
-  const header =
-    kind === "start"
-      ? "[memory-guard] Watched files were already dirty before this session started:"
-      : "[memory-guard] Watched file(s) just changed:"
+interface InstructionContext {
+  kind: "start" | "edit"
+  paths: string[]
+  sessionID: string
+  repoRoot: string
+  // The payload's scripts dir, or null when the payload is missing.
+  scriptsDir: string | null
+}
+
+function instructionHeader(kind: InstructionContext["kind"]): string {
+  return kind === "start"
+    ? "[memory-guard] Watched files were already dirty before this session started:"
+    : "[memory-guard] Watched file(s) just changed:"
+}
+
+// One injected command line, run under the OpenCode runtime.
+function scriptCommand(scriptsDir: string, script: string, args: string): string {
+  return `  ${RUNTIME_PREFIX} python3 ${join(scriptsDir, script)} ${args}`
+}
+
+function firstTimeInstruction(context: InstructionContext): string {
+  const { kind, paths, sessionID, repoRoot, scriptsDir } = context
+  const commands =
+    scriptsDir === null
+      ? [`  ${PAYLOAD_MISSING}`]
+      : [
+          scriptCommand(scriptsDir, "set_preference.py", `--repo-root "${repoRoot}" --action <remove|stash>`),
+          scriptCommand(
+            scriptsDir,
+            "apply_action.py",
+            `--repo-root "${repoRoot}" --action <remove|stash> --session-id ${sessionID}`,
+          ),
+        ]
   return [
-    header,
+    instructionHeader(kind),
     ...paths.map((p) => `  - ${p}`),
     "",
     `Session: ${sessionID}`,
@@ -248,7 +334,7 @@ function firstTimeInstruction(
     "asked only this one time for this project -- the answer is then persisted",
     "and reused automatically for every future flagged path here.",
     "",
-    "This AskUserQuestion is mandatory even if the current session says to work",
+    "This `question` tool call is mandatory even if the current session says to work",
     "autonomously without stopping to ask -- that bias covers ordinary judgment",
     "calls, not this explicit user-requested gate. Do not silently pick an",
     "action and continue without asking.",
@@ -257,25 +343,22 @@ function firstTimeInstruction(
     "performs the deletion/stash and marks every currently-dirty watched path",
     "resolved -- do not hand-write git commands instead, they're the reason a",
     "past resolution got recorded without ever really running):",
-    `  python3 ${setPreferencePath} --repo-root "${repoRoot}" --action <remove|stash>`,
-    `  python3 ${applyActionPath} --repo-root "${repoRoot}" --action <remove|stash> --session-id ${sessionID}`,
+    ...commands,
   ].join("\n")
 }
 
-function autoApplyInstruction(
-  kind: "start" | "edit",
-  paths: string[],
-  sessionID: string,
-  repoRoot: string,
-  action: "remove" | "stash",
-): string {
-  const applyActionPath = path.join(SCRIPTS_DIR, "apply_action.py")
-  const header =
-    kind === "start"
-      ? "[memory-guard] Watched files were already dirty before this session started:"
-      : "[memory-guard] Watched file(s) just changed:"
+function autoApplyInstruction(context: InstructionContext, action: "remove" | "stash"): string {
+  const { kind, paths, sessionID, repoRoot, scriptsDir } = context
+  const command =
+    scriptsDir === null
+      ? `  ${PAYLOAD_MISSING}`
+      : scriptCommand(
+          scriptsDir,
+          "apply_action.py",
+          `--repo-root "${repoRoot}" --action ${action} --session-id ${sessionID}`,
+        )
   return [
-    header,
+    instructionHeader(kind),
     ...paths.map((p) => `  - ${p}`),
     "",
     `Session: ${sessionID}`,
@@ -287,13 +370,25 @@ function autoApplyInstruction(
     "it (mempalace if available, otherwise the file-based auto-memory system),",
     `then run the one command below to actually apply "${action}" and mark`,
     "everything resolved -- do not hand-write git commands instead:",
-    `  python3 ${applyActionPath} --repo-root "${repoRoot}" --action ${action} --session-id ${sessionID}`,
+    command,
   ].join("\n")
 }
 
 // --- Plugin ----------------------------------------------------------------
 
-export const opencodeMemoryGuard: Plugin = async ({ client, directory, $ }) => {
+export const opencodeMemoryGuard: Plugin = async ({ client, directory, worktree, $ }) => {
+  // A resolver failure is treated like a missing payload: payloadRoot stays null.
+  let payload: PayloadResolution = { root: null, searched: [] }
+  let unavailable: string
+  try {
+    payload = resolvePayloadRoot({ pluginId: PLUGIN_ID, marker: PAYLOAD_MARKER, directory, worktree })
+    unavailable = `[memory-guard] payload not found. Searched: ${payload.searched.join(", ")}. ${NO_SCRIPTS_HINT}`
+  } catch (error) {
+    unavailable = `[memory-guard] payload resolution failed (${String(error)}). ${NO_SCRIPTS_HINT}`
+  }
+  const payloadRoot = payload.root
+  const MARKER = payloadRoot ? join(payloadRoot, PAYLOAD_MARKER) : null
+
   let currentSessionID: string | undefined
   let sessionFresh = false
 
@@ -318,6 +413,28 @@ export const opencodeMemoryGuard: Plugin = async ({ client, directory, $ }) => {
     }
   }
 
+  // The warning is marked before the log is awaited, so concurrent instructions cannot both log it.
+  async function warnPayloadOnce(message: string): Promise<void> {
+    if (payloadWarningLogged) return
+    payloadWarningLogged = true
+    try {
+      await client.app.log({ body: { service: "memory-guard", level: "warn", message } })
+    } catch {
+      // logging must never break the hook
+    }
+  }
+
+  // The payload's scripts dir while its apply_action.py is there; otherwise
+  // null, after the payload warning. Checked per instruction, so a payload
+  // removed or re-created after start applies to the next one.
+  async function payloadScripts(): Promise<string | null> {
+    if (MARKER !== null && existsSync(MARKER)) return dirname(MARKER)
+    const missing =
+      MARKER === null ? unavailable : `[memory-guard] payload script not found at ${MARKER}. ${NO_SCRIPTS_HINT}`
+    await warnPayloadOnce(missing)
+    return null
+  }
+
   async function repoRootFor(cwd: string): Promise<string | null> {
     try {
       const result = await $`git -C ${cwd} rev-parse --show-toplevel`
@@ -332,7 +449,7 @@ export const opencodeMemoryGuard: Plugin = async ({ client, directory, $ }) => {
   }
 
   async function liveDirtyWatchedPaths(repoRoot: string): Promise<string[]> {
-    const patterns = loadWatchedPatterns()
+    const patterns = loadWatchedPatterns(payloadRoot)
     const pathspecs = [...patterns.dirs, ...patterns.files]
     try {
       const result = await $`git -C ${repoRoot} status --porcelain --untracked-files=all -- ${pathspecs}`
@@ -360,25 +477,18 @@ export const opencodeMemoryGuard: Plugin = async ({ client, directory, $ }) => {
       if (await markPendingIfNew(sessionID, p)) newly.push(p)
     }
     if (newly.length === 0) return null
-    const preference = readProjectPreference(repoRoot)
-    if (preference) {
-      return autoApplyInstruction("start", newly, sessionID, repoRoot, preference)
-    }
-    return firstTimeInstruction("start", newly, sessionID, repoRoot)
+    return buildInstruction({ kind: "start", paths: newly, sessionID, repoRoot, scriptsDir: await payloadScripts() })
   }
 
-  // PostToolUse equivalent: read the standing preference (if any) for a
-  // batched set of flagged paths and emit the matching instruction.
-  function buildEditInstruction(
-    sessionID: string,
-    repoRoot: string,
-    paths: string[],
-  ): string | null {
-    const preference = readProjectPreference(repoRoot)
-    if (preference) {
-      return autoApplyInstruction("edit", paths, sessionID, repoRoot, preference)
-    }
-    return firstTimeInstruction("edit", paths, sessionID, repoRoot)
+  // PostToolUse equivalent: the instruction for a batched set of flagged paths.
+  async function buildEditInstruction(sessionID: string, repoRoot: string, paths: string[]): Promise<string> {
+    return buildInstruction({ kind: "edit", paths, sessionID, repoRoot, scriptsDir: await payloadScripts() })
+  }
+
+  // The standing preference (if any) picks the auto-apply text over the first-time ask.
+  function buildInstruction(context: InstructionContext): string {
+    const preference = readProjectPreference(context.repoRoot)
+    return preference ? autoApplyInstruction(context, preference) : firstTimeInstruction(context)
   }
 
   return {
@@ -396,7 +506,7 @@ export const opencodeMemoryGuard: Plugin = async ({ client, directory, $ }) => {
           const repoRoot = await repoRootFor(directory)
           if (!repoRoot) return
           const rel = relpathOrNone(file, directory, repoRoot)
-          if (!rel || !isWatched(rel)) return
+          if (!rel || !isWatched(rel, loadWatchedPatterns(payloadRoot))) return
           if (await markPendingIfNew(sid, rel)) {
             pendingFlags.push({ sessionID: sid, repoRoot, path: rel })
             log("info", "flagged watched file edit", { path: rel, sessionID: sid })
@@ -434,11 +544,8 @@ export const opencodeMemoryGuard: Plugin = async ({ client, directory, $ }) => {
         }
         for (const [repoRoot, paths] of byRepo) {
           try {
-            const text = buildEditInstruction(sid, repoRoot, paths)
-            if (text) {
-              output.system.push(text)
-              log("info", "injected post-edit instruction", { paths, sessionID: sid })
-            }
+            output.system.push(await buildEditInstruction(sid, repoRoot, paths))
+            log("info", "injected post-edit instruction", { paths, sessionID: sid })
           } catch (err) {
             log("error", "post-edit instruction failed", { error: String(err) })
           }

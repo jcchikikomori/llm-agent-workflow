@@ -1,7 +1,7 @@
 {
-  "name": "opencode-token-saver",
+  "name": "opencode-markdown-format",
   "version": "1.1.0",
-  "description": "Enforces token-saving techniques in OpenCode — proactive compaction reminders, CLAUDE.md/AGENTS.md size warnings, and vague-prompt guidance",
+  "description": "Auto-formats .md files after the agent writes or edits them using markdownlint-cli2 --fix; silently corrects LLM-generated markdown errors and never blocks a write",
   "type": "module",
   "author": {
     "name": "John Cyrill Corsanes",

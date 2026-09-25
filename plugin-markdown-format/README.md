@@ -19,8 +19,8 @@ Claude to write markdownlint-compliant markdown proactively.
 **Binary resolution order:**
 
 1. Global `markdownlint-cli2` binary (if installed)
-2. `npx markdownlint-cli2` (auto-downloads on first run, no install required)
-3. If `npx` is also unavailable: prints install hint and exits cleanly
+1. `npx markdownlint-cli2` (auto-downloads on first run, no install required)
+1. If `npx` is also unavailable: prints install hint and exits cleanly
 
 ## Requirements
 
@@ -53,7 +53,22 @@ it up automatically via its config search and the bundled config is not applied.
 
 ## Version History
 
-| Version | Changes |
-| ------- | ------- |
-| 1.0.0 | Major release for repository rename to `llm-agent-workflow`; updated install target to `markdown-format@llm-agent-workflow`; no behavior changes |
-| 0.1.0 | Initial release — PostToolUse hook + bundled config + markdown-format skill |
+### 1.1.0
+
+- opencode port, payload resolver v2: the port finds `config/.markdownlint.json` in the installed payload (env root,
+  then project, then global config dir, then the dev layout) and passes it as `--config`. Without the payload it
+  runs `markdownlint-cli2` without `--config` and logs one warning per process. The Claude Code hook is unchanged.
+- opencode port: linter failures (not installed, cannot start, exit other than 0 or 1) are logged at `warn`, once per
+  process. The hook still never throws or blocks a write.
+- opencode port: the linter lookup and run get the current `process.env`. Bun otherwise hands a child the env from
+  process start.
+- New `package.json` (`opencode-markdown-format`) for the opencode port.
+
+### 1.0.0
+
+- Major release for repository rename to `llm-agent-workflow`; updated install target to
+  `markdown-format@llm-agent-workflow`; no behavior changes
+
+### 0.1.0
+
+- Initial release — PostToolUse hook + bundled config + markdown-format skill

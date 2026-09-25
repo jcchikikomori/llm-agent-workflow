@@ -95,7 +95,7 @@ is the supported control.
 | Watcher | `hooks/await_commit.sh` | Bounded 10-poll watch; one verdict line, then exits |
 | Hook config | `hooks/hooks.json` | Registers `PreToolUse` on the `Bash` matcher |
 | Skill | `skills/commit-guard/SKILL.md` | Tells Claude how to hand over, watch, and verify |
-| OpenCode port | `plugins/opencode-commit-guard.ts` | Shells out to the same Python classifier |
+| OpenCode port | `plugins/opencode-commit-guard.ts` | Shells out to the same Python classifier (see OpenCode) |
 | Token file | `~/.claude/.commit-guard-token` | Explicit override; single-use |
 
 The hook snapshots `HEAD`, the in-progress markers, `rebase-merge/orig-head` and
@@ -131,6 +131,49 @@ command to Claude** — it lives only in `SKILL.md`, gated on an explicit
 instruction from you. The token is `sha256(command + "\0" + absolute_git_dir)`:
 bound to both the exact command and the repo, and consumed on first match.
 
+## OpenCode
+
+`./setup-opencode.sh --global --plugin commit-guard` (or `--project <path>`)
+installs three units into the scope:
+
+| Unit | Path | Role |
+| --- | --- | --- |
+| Plugin | `plugins/opencode-commit-guard.ts` | Shells out to the same Python classifier |
+| Payload | `llm-agent-workflow/commit-guard/hooks/` | The classifier and the watcher |
+| Command | `commands/commit-guard.md` | `/commit-guard`, the delegation flow |
+
+The token file is `~/.config/opencode/.commit-guard-token`, and the ledger and
+watcher result files live in `~/.config/opencode/.commit-guard/`.
+
+**Finding the payload.** The port looks for `hooks/commit_guard_hook.py` in
+these dirs, in order, and the first one that has it wins:
+
+1. `$LLM_AGENT_WORKFLOW_PAYLOAD_ROOT/commit-guard`. When the variable is set,
+   this is the only candidate.
+1. `<dir>/.opencode/llm-agent-workflow/commit-guard`, for OpenCode's `directory`
+   and then its `worktree`.
+1. `${XDG_CONFIG_HOME:-~/.config}/opencode/llm-agent-workflow/commit-guard`.
+1. The port's own parent dir, which is `plugin-commit-guard/` in this repo.
+
+Every candidate is an absolute path, and only the last one depends on where the
+`.ts` file lives. That matters because `plugins/` is often a symlink into a
+dotfiles repo, and Bun reports `import.meta.url` at the realpath. The old
+`<here>/../hooks` lookup therefore pointed into the dotfiles tree.
+
+**No payload, no git.** If no candidate has the classifier, or the lookup itself
+fails, every bash call that mentions git throws. The message lists each dir that
+was searched and names `./setup-opencode.sh --global --plugin commit-guard`.
+Other bash calls, such as `ls`, and other tools pass untouched. The warning goes
+to the OpenCode log once per process. Loading the plugin never throws.
+
+**Arming the watcher.** The watcher line in the handoff names the payload copy,
+`<scope>/llm-agent-workflow/commit-guard/hooks/await_commit.sh`, because the
+hook finds `await_commit.sh` next to its own file. OpenCode's bash tool has no
+`run_in_background`, so the agent runs that exact line from the payload dir as
+a background job, never in the foreground, and reads the verdict from the
+`--result-file` on a later turn. If it cannot start a background job, that is
+the handoff's normal outcome: the agent says so and waits for you.
+
 ## Known limits
 
 1. **This hook is advisory, not enforcement.** Plumbing (`git commit-tree`,
@@ -157,6 +200,29 @@ bound to both the exact command and the repo, and consumed on first match.
    predicate covers only the commit.
 
 ## Changelog
+
+### 1.2.0
+
+Payload resolver v2 for the OpenCode port.
+
+- **The port finds `hooks/` through absolute candidates**: the env root (on its
+  own when set), the project (`directory`, then `worktree`), the global config
+  dir, then the dev layout. It used to look in `<here>/../hooks`, and Bun reports
+  `<here>` at the realpath. With `plugins/` symlinked into a dotfiles repo, that
+  lookup pointed into the dotfiles tree and found nothing. The bug stayed latent
+  until an install put the payload under `llm-agent-workflow/commit-guard/`.
+- **A missing payload fails closed.** Every bash call that mentions git throws a
+  message listing each searched dir and the reinstall command. A resolver
+  failure does the same, and the plugin factory never throws. Other calls pass,
+  and the warning is logged once per process.
+- **Security fix — path-qualified git now reaches the classifier on OpenCode.**
+  The port's fast-path regex still had the pre-1.1.1 lookbehind `(?<![\w./-])`,
+  so `/usr/bin/git commit`, `./git commit` and `"/usr/bin/git" commit` never
+  reached the classifier and ran unguarded. It now uses the hook's
+  `(?<![\w-])`, the same bypass 1.1.1 closed for Claude Code.
+- The skill description is shortened from 291 to 246 bytes, to fit the 250-byte
+  limit for converted skills.
+- The OpenCode watcher arming is documented (see OpenCode above).
 
 ### 1.1.1
 

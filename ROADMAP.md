@@ -4,14 +4,14 @@ This fork is porting its plugins to [opencode](https://opencode.ai), so the same
 work in both Claude Code and opencode. The work happens on the `feature/port-to-opencode` branch. Each phase lands as
 its own commit, and this file is updated in each one.
 
-Last updated: 2026-09-25.
+Last updated: 2026-09-26.
 
 ## Status at a glance
 
 | Phase | What it delivers | Status |
 | --- | --- | --- |
 | 0 | Test harness for the installer and the ports | Done |
-| 1 | Installer core, and payload resolution for the existing ports | In progress (6 of 7 tasks) |
+| 1 | Installer core, and payload resolution for the existing ports | Done |
 | 2 | Legacy file cleanup and the gh-issue-to-pr agent | Planned |
 | 3 | `claude-attribution` becomes `ai-attribution` | Planned |
 | 4 | Skill pipeline | Planned |
@@ -23,8 +23,8 @@ Last updated: 2026-09-25.
 | 10 | Manual check in a real opencode install | Planned |
 | 11 | Final quality pass | Planned |
 
-"Done" means the work is finished and its tests pass locally. Phases 0 and 1 land together in one commit when Phase 1
-ends.
+"Done" means the phase is finished, its tests pass, and its commit is on this branch. Phases 0 and 1 share one
+commit.
 
 ## Plugin support on opencode
 
@@ -80,7 +80,7 @@ This is the target state. A plugin counts as supported only when its phase is do
 - [x] 1.4 `commit-guard` payload resolver, with the drift test
 - [x] 1.5 `markdown-format` payload resolver and `package.json`
 - [x] 1.6 `token-saver` payload resolver
-- [ ] 1.7 `memory-guard` payload resolver, and one runtime setting for both tools
+- [x] 1.7 `memory-guard` payload resolver, and one runtime setting for both tools
 
 ### Phase 2: legacy cleanup and gh-issue-to-pr
 

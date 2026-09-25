@@ -26,8 +26,12 @@
  *   - "chat.message" fires when a new user message is received; the prompt
  *     text is extracted from its text parts (skipping synthetic parts such as
  *     auto-continue turns).
- *   - The vagueness check (isVague below) is ported 1:1 from prompt_quality.py
- *     and still reads config/vague-patterns.json (relative to the plugin root).
+ *   - The vagueness check (isVague below) is ported 1:1 from prompt_quality.py.
+ *     It reads config/vague-patterns.json from the payload, found by the
+ *     resolver block below: the env root, then the project, then the global
+ *     config dir, then the dev layout. The file is read on every prompt. If
+ *     the payload is missing, the resolver fails, or the file cannot be read
+ *     or is not valid, the built-in defaults apply.
  *   - The blocking exit(2) behavior is deliberately NOT ported — it is
  *     impossible in the OpenCode plugin API. Instead the block message is
  *     injected into the system prompt via "experimental.chat.system.transform"
@@ -35,26 +39,24 @@
  *     specifics, rather than having the prompt silently rejected).
  *
  * All three paths are best-effort and never throw: diagnostics go through
- * client.app.log({ body: { service: "token-saver", ... } }).
+ * client.app.log({ body: { service: "token-saver", ... } }). Payload and
+ * patterns-file problems are logged at warn, once per process for each kind.
  */
 import type { Plugin } from "@opencode-ai/plugin"
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
-import path from "node:path"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 // --- Module-level constants ------------------------------------------------
 
-// Plugin root = the plugin-token-saver directory (this file lives in plugins/).
-const pluginRoot = path.resolve(import.meta.dir, "..")
+const PLUGIN_ID = "token-saver"
+// The vague-pattern config, the same file the Python prompt_quality.py reads.
+const PAYLOAD_MARKER = "config/vague-patterns.json"
+const DEFAULTS_HINT = `Using the built-in patterns. Reinstall with ./setup-opencode.sh --global --plugin ${PLUGIN_ID}`
 
 // OpenCode state dir replaces the Claude Code ~/.claude/.token-saver.
-const STATE_DIR = path.join(homedir(), ".config", "opencode", ".token-saver")
-
-// Vague-pattern config, same file the Python prompt_quality.py reads. Note:
-// when this file is installed into ~/.config/opencode/plugins/ by
-// setup-opencode.sh, this path no longer resolves and loadVaguePatterns()
-// falls back to the built-in defaults.
-const PATTERNS_FILE = path.join(pluginRoot, "config", "vague-patterns.json")
+const STATE_DIR = join(homedir(), ".config", "opencode", ".token-saver")
 
 const COMPACT_INTERVAL_MS = 15 * 60 * 1000 // 15 minutes, matches the Python hook
 
@@ -135,28 +137,68 @@ interface VaguePatterns {
   whitelisted: string[]
 }
 
+// <payload-resolver v2> keep byte-identical; checked by scripts/opencode/tests/test_resolver_drift.py
+// requires: existsSync (node:fs), homedir (node:os), dirname + join (node:path), fileURLToPath (node:url)
+const PAYLOAD_NAMESPACE = "llm-agent-workflow"
+const PAYLOAD_ROOT_ENV = "LLM_AGENT_WORKFLOW_PAYLOAD_ROOT"
+const PROJECT_CONFIG_DIR = ".opencode"
+const GLOBAL_CONFIG_SUBDIR = "opencode"
+
+interface PayloadQuery {
+  pluginId: string
+  marker: string
+  directory: string
+  worktree: string
+}
+
+interface PayloadResolution {
+  root: string | null
+  searched: string[]
+}
+
+function payloadCandidates(query: PayloadQuery): string[] {
+  const override = process.env[PAYLOAD_ROOT_ENV]
+  if (override) return [join(override, query.pluginId)]
+  const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
+  const projectRoots = [...new Set([query.directory, query.worktree].filter(Boolean))]
+  return [
+    ...projectRoots.map((root) => join(root, PROJECT_CONFIG_DIR, PAYLOAD_NAMESPACE, query.pluginId)),
+    join(configHome, GLOBAL_CONFIG_SUBDIR, PAYLOAD_NAMESPACE, query.pluginId),
+    join(dirname(fileURLToPath(import.meta.url)), ".."),
+  ]
+}
+
+function resolvePayloadRoot(query: PayloadQuery): PayloadResolution {
+  const searched = payloadCandidates(query)
+  const root = searched.find((dir) => existsSync(join(dir, query.marker))) ?? null
+  return { root, searched }
+}
+// </payload-resolver>
+
+// "payload": no payload, a resolver failure, or the patterns file removed after start.
+// "patterns": a patterns file that cannot be read or is not valid.
+type WarningKind = "payload" | "patterns"
+
+// Warnings this process has logged: one per kind, however many instances or prompts hit it.
+const loggedWarnings = new Set<WarningKind>()
+
 // --- Prompt-quality logic (1:1 port of prompt_quality.py) -------------------
 
-function loadVaguePatterns(): VaguePatterns {
-  try {
-    const data = JSON.parse(readFileSync(PATTERNS_FILE, "utf8")) as {
-      patterns?: unknown
-      whitelisted_prefixes?: unknown
-    }
-    const patterns = data.patterns
-    const whitelisted = data.whitelisted_prefixes
-    if (
-      Array.isArray(patterns) &&
-      Array.isArray(whitelisted) &&
-      patterns.every((p) => typeof p === "string") &&
-      whitelisted.every((p) => typeof p === "string")
-    ) {
-      return { patterns, whitelisted }
-    }
-  } catch {
-    // fall through to defaults (missing or unreadable config)
-  }
+function defaultPatterns(): VaguePatterns {
   return { patterns: [...DEFAULT_PATTERNS], whitelisted: [...DEFAULT_WHITELISTED] }
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string")
+}
+
+/** Reads a vague-patterns.json; throws unless it holds string arrays `patterns` and `whitelisted_prefixes`. */
+function readVaguePatterns(file: string): VaguePatterns {
+  const data = JSON.parse(readFileSync(file, "utf8")) as { patterns?: unknown; whitelisted_prefixes?: unknown } | null
+  const patterns = data?.patterns
+  const whitelisted = data?.whitelisted_prefixes
+  if (isStringArray(patterns) && isStringArray(whitelisted)) return { patterns, whitelisted }
+  throw new TypeError("patterns and whitelisted_prefixes must be arrays of strings")
 }
 
 /**
@@ -233,8 +275,19 @@ function lastCompactTimestamp(statePath: string): number {
 
 // --- Plugin ----------------------------------------------------------------
 
-export const TokenSaverPlugin: Plugin = async ({ client, directory }) => {
+export const TokenSaverPlugin: Plugin = async ({ client, directory, worktree }) => {
   const docRoot = directory ?? process.cwd()
+
+  // A resolver failure is treated like a missing payload: PATTERNS stays null.
+  let payload: PayloadResolution = { root: null, searched: [] }
+  let unavailable: string
+  try {
+    payload = resolvePayloadRoot({ pluginId: PLUGIN_ID, marker: PAYLOAD_MARKER, directory, worktree })
+    unavailable = `[token-saver] payload not found. Searched: ${payload.searched.join(", ")}. ${DEFAULTS_HINT}`
+  } catch (error) {
+    unavailable = `[token-saver] payload resolution failed (${String(error)}). ${DEFAULTS_HINT}`
+  }
+  const PATTERNS = payload.root ? join(payload.root, PAYLOAD_MARKER) : null
 
   // SessionStart equivalent: set on session.created, consumed once by the
   // first experimental.chat.system.transform (mirrors memory-guard).
@@ -259,11 +312,36 @@ export const TokenSaverPlugin: Plugin = async ({ client, directory }) => {
     }
   }
 
+  // The kind is marked before the log is awaited, so concurrent prompts cannot both log it.
+  async function warnOnce(kind: WarningKind, message: string): Promise<void> {
+    if (loggedWarnings.has(kind)) return
+    loggedWarnings.add(kind)
+    await log("warn", message)
+  }
+
+  // The payload's patterns while its file is there and valid; otherwise the built-in defaults, after a warning.
+  async function vaguePatterns(): Promise<VaguePatterns> {
+    if (PATTERNS === null) {
+      await warnOnce("payload", unavailable)
+      return defaultPatterns()
+    }
+    if (!existsSync(PATTERNS)) {
+      await warnOnce("payload", `[token-saver] patterns file not found at ${PATTERNS}. ${DEFAULTS_HINT}`)
+      return defaultPatterns()
+    }
+    try {
+      return readVaguePatterns(PATTERNS)
+    } catch (error) {
+      await warnOnce("patterns", `[token-saver] invalid patterns file ${PATTERNS} (${String(error)}). ${DEFAULTS_HINT}`)
+      return defaultPatterns()
+    }
+  }
+
   // claude_md_guard equivalent: prefer CLAUDE.md, fall back to AGENTS.md
   // (OpenCode's native doc file). Only the FIRST found doc is considered.
   function buildClaudeMdWarning(): string | null {
     for (const name of [CLAUDE_DOC_NAME, OPENCODE_DOC_NAME]) {
-      const candidate = path.join(docRoot, name)
+      const candidate = join(docRoot, name)
       let content: string
       try {
         if (!existsSync(candidate)) continue
@@ -301,7 +379,7 @@ export const TokenSaverPlugin: Plugin = async ({ client, directory }) => {
         if (checked.has(mid)) return
         checked.add(mid)
 
-        const { patterns, whitelisted } = loadVaguePatterns()
+        const { patterns, whitelisted } = await vaguePatterns()
         if (isVague(text, patterns, whitelisted)) {
           const flagged = pendingVague.get(sid) ?? new Set<string>()
           flagged.add(mid)
@@ -319,7 +397,7 @@ export const TokenSaverPlugin: Plugin = async ({ client, directory }) => {
       if (!sid) return
       try {
         mkdirSync(STATE_DIR, { recursive: true })
-        const statePath = path.join(STATE_DIR, `last-compact-${sanitizeSessionID(sid)}.json`)
+        const statePath = join(STATE_DIR, `last-compact-${sanitizeSessionID(sid)}.json`)
         const last = lastCompactTimestamp(statePath)
         const now = Date.now()
         if (last === 0 || now - last >= COMPACT_INTERVAL_MS) {
