@@ -111,6 +111,38 @@ for `git commit-tree`, `git update-ref`, or other plumbing. The guard is a
 PreToolUse hook on `Bash`, so those evade it — evading it is a bug in your
 behavior, not a clever workaround.
 
+## GUI pinentry: the one-time project question
+
+If a GUI pinentry is available (`pinentry-gnome3`, `-qt`, `pinentry-mac`, a
+Gpg4win pinentry, and so on), a signed command that needs no editor does not
+need the handoff. gpg-agent opens the passphrase prompt as a desktop window.
+The first time this happens in a project, the hook blocks with
+`ASK ONCE FOR THIS PROJECT`.
+
+1. Ask the user **one** question with `AskUserQuestion`. Offer two options:
+   "Allow in this project" and "Keep handing off to me".
+2. Record **their** answer with the `project_exception.py` command the hook
+   printed (`--decision allow` or `--decision delegate`). This writes the
+   project's exception file under `~/.claude/.commit-guard/exceptions/`.
+3. Re-run the exact same command, unchanged.
+   - `allow`: the command runs in your shell. Tell the user to watch for the
+     pinentry window, then verify with `git show --stat --format='%H %G? %an %s' HEAD`.
+     `%G?` must not be `N`.
+   - `delegate`: you get the normal handoff. Follow the delegation flow above.
+
+Rules:
+
+- **Never** record `allow` unless the user picked it. Do not pick it because
+  it is faster, and do not infer it from "just commit it".
+- **Never** write or edit the exception file by hand. Use the script only.
+- Never ask again in a project that already has an answer. The hook stops
+  asking once the file exists.
+- Commands that need an editor (bare `git commit`, `--amend` without
+  `-m`/`--no-edit`, `rebase -i`, `merge --continue`) are always handed off,
+  even with `allow`.
+- If a pinentry window gets no answer and gpg fails, report the failure. Do
+  **not** retry with `--no-gpg-sign`.
+
 ## Override — only on an explicit instruction
 
 There is a one-time token that lets a single command through. It exists for

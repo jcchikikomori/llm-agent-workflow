@@ -359,7 +359,8 @@ def resolve_alias(subcommand, cwd):
 def scan(command, base_cwd, depth=0):
     """Walk every simple command. Returns (hits, saw_git).
 
-    Each hit is (op, cwd, git_dir_override, tag_name). `saw_git` is True if a
+    Each hit is (op, cwd, git_dir_override, tag_name, subcommand, args), with
+    `subcommand`/`args` AFTER alias resolution. `saw_git` is True if a
     real git invocation was resolved -- even a harmless one like `git status`.
     It is what lets an opaque construct fail closed only when the parser
     understood nothing, so `git log --format=$(...)` stays allowed while
@@ -409,7 +410,8 @@ def scan(command, base_cwd, depth=0):
         op = classify(subcommand, args)
         if op:
             hits.append((op, effective, overrides.get("git_dir"),
-                         tag_name_of(args) if op == "tag" else None))
+                         tag_name_of(args) if op == "tag" else None,
+                         subcommand, args))
     return hits, saw_git
 
 
@@ -551,6 +553,179 @@ def watcher_invocation(op, state, result_file):
         parts += ["--tag", state["tag"], "--pre-tag", state["pre_tag"]]
     return " ".join(shlex.quote(part) for part in parts)
 
+# --- GUI pinentry bypass ---------------------------------------------------
+#
+# The delegation exists because the agent shell has no tty for pinentry and no
+# editor. A GUI pinentry needs neither: gpg-agent opens a desktop window. So
+# when a signed command also needs no editor, the agent CAN produce the signed
+# commit itself -- but only once the user said yes for this project, recorded
+# in an exception file OUTSIDE the repo. Outside, because an in-repo file would
+# let any cloned repo ship its own bypass.
+
+EXCEPTIONS_DIR = STATE_DIR / "exceptions"
+EXCEPTION_SCRIPT = HOOK_DIR / "project_exception.py"
+
+# pinentry flavours that draw their own window. gnome3 / qt / gtk silently
+# fall back to curses without a display, hence the DISPLAY check below.
+GUI_PINENTRY = {
+    "pinentry-gnome3", "pinentry-gtk", "pinentry-gtk2", "pinentry-gtk-2",
+    "pinentry-qt", "pinentry-qt4", "pinentry-qt5", "pinentry-qt6",
+    "pinentry-fltk", "pinentry-efl", "pinentry-x2go",
+}
+MAC_PINENTRY = {"pinentry-mac"}
+# Gpg4win ships pinentry / pinentry-basic / pinentry-w32 / pinentry-qt as
+# native Windows dialogs; from WSL they show up as a /mnt/c/.../*.exe path.
+WINDOWS_PINENTRY = {"pinentry", "pinentry-basic", "pinentry-w32", "pinentry-qt"}
+
+MESSAGE_FLAGS = {"-m", "--message", "-F", "--file"}
+COMMIT_NO_EDITOR = MESSAGE_FLAGS | {"-C", "--reuse-message", "--no-edit", "--fixup"}
+
+
+def pinentry_program():
+    """Resolve the pinentry gpg-agent will launch: `pinentry-program` in
+    gpg-agent.conf wins, else gpgconf's compiled-in default. Symlinks are
+    resolved, because Debian's /usr/bin/pinentry is an alternatives link to
+    the real flavour."""
+    home = Path(os.environ.get("GNUPGHOME") or Path.home() / ".gnupg")
+    program = None
+    try:
+        for line in (home / "gpg-agent.conf").read_text().splitlines():
+            parts = line.strip().split(None, 1)
+            if len(parts) == 2 and parts[0] == "pinentry-program":
+                program = parts[1].strip().strip('"')
+    except (OSError, UnicodeDecodeError):
+        pass
+    if not program:
+        try:
+            proc = subprocess.run(["gpgconf", "--list-components"],
+                                  capture_output=True, text=True,
+                                  timeout=GIT_TIMEOUT)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        for line in proc.stdout.splitlines():
+            if line.startswith("pinentry:"):
+                program = line.rsplit(":", 1)[-1].strip()
+    if not program:
+        return None
+    return os.path.realpath(program)
+
+
+def gui_pinentry_usable(program, env=None, platform=None):
+    """True when `program` shows a window the user can actually see."""
+    if not program:
+        return False
+    env = os.environ if env is None else env
+    platform = platform or sys.platform
+    name = os.path.basename(program.replace("\\", "/")).lower()
+    is_exe = name.endswith(".exe")
+    if is_exe:
+        name = name[:-4]
+    if platform in ("win32", "cygwin", "msys") or is_exe:
+        # Native Windows, or WSL calling a Windows pinentry: the Windows
+        # desktop is there whether or not WSL has a DISPLAY.
+        return name in WINDOWS_PINENTRY
+    if name.startswith("pinentry-wsl"):
+        return True  # pinentry-wsl-ps1: a PowerShell dialog on the host
+    if platform == "darwin":
+        # Over plain ssh the window would open on the host's screen, not yours.
+        return name in MAC_PINENTRY and not env.get("SSH_CONNECTION")
+    return name in GUI_PINENTRY and bool(env.get("DISPLAY") or env.get("WAYLAND_DISPLAY"))
+
+
+def editor_free(subcommand, args):
+    """True when the command finishes without opening an editor. The agent
+    shell has GIT_EDITOR=true, so anything else would silently accept a
+    template -- those are always delegated, exception or not."""
+    flags = expand_flags(args)
+    if flags & {"-e", "--edit"}:
+        return False
+    if subcommand == "commit":
+        if flags & {"-c", "--reedit-message"}:
+            return False
+        if any(token.startswith(("--fixup=amend:", "--fixup=reword:")) for token in args):
+            return False
+        return bool(flags & COMMIT_NO_EDITOR)
+    if subcommand == "tag":
+        return bool(flags & MESSAGE_FLAGS)
+    if subcommand == "merge":
+        return "--continue" not in flags and bool(flags & (MESSAGE_FLAGS | {"--no-edit"}))
+    if subcommand == "pull":
+        if any(token in ("--rebase=interactive", "--rebase=i") for token in args):
+            return False
+        return pull_op(flags, args) == "rebase" or "--no-edit" in flags
+    if subcommand == "cherry-pick":
+        return "--continue" not in flags
+    if subcommand == "revert":
+        return "--no-edit" in flags and "--continue" not in flags
+    if subcommand == "rebase":
+        return not flags & {"-i", "--interactive", "--continue", "--edit-todo"}
+    if subcommand == "am":
+        return not flags & {"-i", "--interactive"}
+    return False
+
+
+def signing_required(hits, cwd):
+    """True when any hit asks gpg for a signature. SSH and x509 signing never
+    go through pinentry, so they are not this feature's business."""
+    if (run_git(["config", "--get", "gpg.format"], cwd=cwd) or "openpgp") != "openpgp":
+        return False
+    commit_sign = run_git(["config", "--bool", "--get", "commit.gpgsign"], cwd=cwd) == "true"
+    tag_sign = run_git(["config", "--bool", "--get", "tag.gpgSign"], cwd=cwd) == "true"
+    for hit in hits:
+        subcommand, args = hit[4], hit[5]
+        flags = expand_flags(args)
+        if "--no-gpg-sign" in flags or "--no-sign" in flags:
+            continue
+        if subcommand == "tag":
+            if flags & {"-s", "--sign", "-u", "--local-user"} or tag_sign:
+                return True
+        elif flags & {"-S", "--gpg-sign"} or commit_sign:
+            return True
+    return False
+
+
+def exception_path(project):
+    key = hashlib.sha256(os.path.realpath(project).encode("utf-8", "replace")).hexdigest()
+    return EXCEPTIONS_DIR / (key[:16] + ".json")
+
+
+def read_exception(project):
+    """The recorded decision ("allow" / "delegate") for this project, or None.
+    The stored path must match, so a hash-prefix collision cannot borrow
+    another repo's answer."""
+    try:
+        data = json.loads(exception_path(project).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("project") != os.path.realpath(project):
+        return None
+    decision = data.get("decision")
+    return decision if decision in ("allow", "delegate") else None
+
+
+def pinentry_bypass(hits, state):
+    """Return (verdict, pinentry). Verdict is "allow" (run it here), "ask"
+    (ask the user once for this project), or None (delegate as usual)."""
+    setting = os.environ.get("COMMIT_GUARD_PINENTRY", "auto").strip().lower()
+    if setting == "off":
+        return None, None
+    # A chain spanning two repos would be judged by one repo's exception.
+    if len({(hit[1], hit[2]) for hit in hits}) != 1:
+        return None, None
+    if not all(hit[4] and editor_free(hit[4], hit[5]) for hit in hits):
+        return None, None
+    if not signing_required(hits, state["dir"]):
+        return None, None
+    program = pinentry_program()
+    if setting != "gui" and not gui_pinentry_usable(program):
+        return None, None
+    decision = read_exception(state["dir"])
+    if decision == "allow":
+        return "allow", program
+    if decision == "delegate":
+        return None, program
+    return "ask", program
+
 
 DELEGATE = """\
 [commit-guard] DELEGATED: this command writes a commit message and must be run
@@ -614,6 +789,34 @@ Check the real state with `git log --oneline -3` and `git status --short
 --branch` before doing anything else. If the user has not run it yet, wait. Do
 not run it yourself."""
 
+ASK_EXCEPTION = """\
+[commit-guard] ASK ONCE FOR THIS PROJECT: this command signs with GPG, needs no
+editor, and a GUI pinentry is available ({program}). So it CAN run from the
+agent shell -- the passphrase prompt opens as a desktop window, no tty needed.
+The command was NOT run.
+
+COMMAND:
+  {command}
+
+DO THIS, IN ORDER:
+  1. Ask the user ONE question with AskUserQuestion:
+       "Let Claude run signed git commits itself in {project}?
+        The GPG passphrase prompt opens in a GUI pinentry window."
+     Options: "Allow in this project" / "Keep handing off to me"
+  2. Record the answer. This writes the project's exception file:
+       python3 {script} --dir {project_q} --decision allow
+     or, for "Keep handing off to me":
+       python3 {script} --dir {project_q} --decision delegate
+  3. Re-run the exact same command, unchanged.
+       allow    -> it runs here; tell the user to watch for the pinentry window.
+       delegate -> you get the normal handoff instructions.
+
+NEVER record "allow" unless the user picked it -- this is the user's decision,
+not yours. Commands that need an editor (bare `git commit`, `rebase -i`,
+`--amend` without -m/--no-edit) are always handed off, whatever is recorded.
+The user can undo the answer later with:
+  python3 {script} --dir {project_q} --remove"""
+
 
 OPAQUE_BLOCK = """\
 [commit-guard] BLOCKED: this command mentions git and contains a construct whose
@@ -658,20 +861,20 @@ def main():
         hits, saw_git = scan(command, base_cwd)
     except ValueError:
         # Unbalanced quotes -- we cannot prove this is safe, so fail CLOSED.
-        hits, saw_git = [("commit", base_cwd, None, None)], True
+        hits, saw_git = [("commit", base_cwd, None, None, None, [])], True
 
     if not hits:
         # `$(which git) commit`, `echo '...' | bash`, backticks, eval, xargs --
         # the git word is there but the real argv is only knowable at runtime.
         # Allowing these would be a silent bypass, so block and say why.
-        if not saw_git and OPAQUE.search(command):
+        if not saw_git and OPAQUE.search(strip_heredocs(command)):
             emit(OPAQUE_BLOCK.format(command=command) if mode != "deny"
                  else DENIED.format(command=command))
         sys.exit(0)
 
     # A chain like `git add . && git commit -m x` is handed over whole, and the
     # LAST intercepted operation is the one worth watching.
-    op, cwd, git_dir_override, tag_name = hits[-1]
+    op, cwd, git_dir_override, tag_name = hits[-1][:4]
 
     state = git_state(cwd, git_dir_override, tag_name)
     if state is None:
@@ -685,6 +888,19 @@ def main():
 
     if mode == "deny":
         emit(DENIED.format(command=command))
+
+    # Checked before the ledger: an earlier handoff of the same command must
+    # not keep blocking it once the user has allowed this project.
+    bypass, program = pinentry_bypass(hits, state)
+    if bypass == "allow":
+        sys.exit(0)
+    if bypass == "ask":
+        emit(ASK_EXCEPTION.format(
+            program=program or "forced by COMMIT_GUARD_PINENTRY=gui",
+            command=command, project=state["dir"],
+            project_q=shlex.quote(state["dir"]),
+            script=shlex.quote(str(EXCEPTION_SCRIPT)),
+        ))
 
     key = digest(command, state["git_dir"])
     age = ledger_check(key)
