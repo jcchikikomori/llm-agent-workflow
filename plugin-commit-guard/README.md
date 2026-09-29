@@ -80,6 +80,75 @@ is the supported control.
 `5 10 15 30 60 120 240 360 480 480` — ten polls, checks at t=5…1800s, a hard
 30-minute ceiling). It exists mainly to make the timeout branch testable.
 
+## GUI pinentry bypass (per project)
+
+The whole handoff exists because the agent shell has no tty for pinentry and no
+editor. A **GUI pinentry** needs neither: gpg-agent opens a desktop window. So
+when a command signs with GPG *and* needs no editor, the agent can make the
+signed commit itself, if you say yes for that project.
+
+The first time such a command comes up in a project, the hook blocks it once and
+tells Claude to ask you:
+
+- **Allow in this project**: Claude records the answer. From then on, signed
+  commits in that project run from the agent shell and the passphrase prompt
+  opens as a window.
+- **Keep handing off to me**: Claude records that too. You get the normal
+  handoff, and the question is not asked again.
+
+The answer goes into an **exception file**,
+`~/.claude/.commit-guard/exceptions/<sha256(repo-root)[:16]>.json`:
+
+```json
+{
+  "project": "/home/you/code/repo",
+  "decision": "allow",
+  "reason": "gui-pinentry",
+  "recorded_at": "2026-09-29T09:10:00+00:00"
+}
+```
+
+The file lives outside the repo on purpose. An in-repo file would let any cloned
+repo ship its own bypass, and it would show up in `git status`. Manage it with:
+
+```bash
+python3 hooks/project_exception.py --dir <project> --show
+python3 hooks/project_exception.py --dir <project> --decision allow|delegate
+python3 hooks/project_exception.py --dir <project> --remove
+```
+
+The bypass applies only when **all** of these hold:
+
+| Condition | Why |
+| --- | --- |
+| Mode is `delegate` (attended session) | An unattended run has nobody to see the window |
+| Signing is on: `commit.gpgsign`/`tag.gpgSign`, or `-S`/`-s`/`-u` | Unsigned repos never hit the pinentry problem, so they keep the old handoff |
+| `gpg.format` is unset or `openpgp` | SSH and x509 signing do not use pinentry |
+| The command needs no editor | Needs `-m`/`-F`/`-C`/`--no-edit`. Bare `git commit`, `--amend`, `rebase -i` and `merge --continue` are always handed off |
+| The pinentry is a GUI one and you can see it | See the table below |
+| Every git op in the chain targets one repo | One repo's answer must not decide for another |
+
+Pinentry detection reads `pinentry-program` from `$GNUPGHOME/gpg-agent.conf`
+first, then falls back to the `gpgconf --list-components` default. Symlinks are
+resolved, because Debian's `/usr/bin/pinentry` is an alternatives link.
+
+| Platform | Counts as GUI |
+| --- | --- |
+| Linux | `pinentry-gnome3`, `-gtk`, `-gtk-2`, `-qt`, `-qt5`, `-qt6`, `-fltk`, `-efl`, `-x2go`, and only with `DISPLAY` or `WAYLAND_DISPLAY` set, since these fall back to curses without one |
+| WSL | Any of the above via WSLg, a Gpg4win `*.exe` pinentry under `/mnt/…`, or `pinentry-wsl-ps1` |
+| macOS | `pinentry-mac`, not over `SSH_CONNECTION`. Homebrew's plain `pinentry` is curses |
+| Native Windows | Gpg4win `pinentry`, `pinentry-basic`, `pinentry-w32`, `pinentry-qt` |
+
+`pinentry-tty`, `pinentry-curses` and `pinentry-emacs` never count.
+
+`COMMIT_GUARD_PINENTRY` controls detection:
+
+| Value | Behavior |
+| --- | --- |
+| `auto` (default) | Detect as above |
+| `gui` | Treat the pinentry as GUI, for setups the detector does not recognise |
+| `off` | No bypass and no question: always hand off |
+
 ## Install
 
 ```bash
@@ -93,6 +162,8 @@ is the supported control.
 | --- | --- | --- |
 | Hook | `hooks/commit_guard_hook.py` | Classifies the command, snapshots the repo, emits the handoff |
 | Watcher | `hooks/await_commit.sh` | Bounded 10-poll watch; one verdict line, then exits |
+| Exception tool | `hooks/project_exception.py` | Records, shows or removes the per-project GUI-pinentry answer |
+| Exception files | `~/.claude/.commit-guard/exceptions/` | One JSON file per project, outside the repo |
 | Hook config | `hooks/hooks.json` | Registers `PreToolUse` on the `Bash` matcher |
 | Skill | `skills/commit-guard/SKILL.md` | Tells Claude how to hand over, watch, and verify |
 | OpenCode port | `plugins/opencode-commit-guard.ts` | Shells out to the same Python classifier (see OpenCode) |
@@ -199,9 +270,15 @@ the handoff's normal outcome: the agent says so and waits for you.
    delegates the push too. Intended, but the handoff text says so and the watcher
    predicate covers only the commit.
 
+## Tests
+
+```bash
+python3 -m unittest discover -s plugin-commit-guard/tests
+```
+
 ## Changelog
 
-### 1.2.0
+### 1.3.0
 
 Payload resolver v2 for the OpenCode port.
 
@@ -223,6 +300,33 @@ Payload resolver v2 for the OpenCode port.
 - The skill description is shortened from 291 to 246 bytes, to fit the 250-byte
   limit for converted skills.
 - The OpenCode watcher arming is documented (see OpenCode above).
+
+### 1.2.0
+
+GUI pinentry bypass, opted into once per project.
+
+- **Signed commits can run from the agent shell when a GUI pinentry is
+  available.** Before this, every signed commit was handed off, even on
+  machines where `pinentry-gnome3`, `pinentry-qt`, `pinentry-mac` or a Gpg4win
+  pinentry would have shown a window without any tty. The hook now detects the
+  pinentry that gpg-agent will actually launch and checks that it can reach a
+  screen.
+- **Asked once, per project.** The first eligible command is blocked with an
+  `ASK ONCE FOR THIS PROJECT` payload. Claude asks you, and
+  `hooks/project_exception.py` saves the answer (`allow` or `delegate`) as an
+  exception file under `~/.claude/.commit-guard/exceptions/`. It is kept outside
+  the repo so a cloned repo cannot grant itself the bypass.
+- **Editor-needing commands are still always handed off**, because
+  `GIT_EDITOR=true` would silently accept the template. Unsigned repos, SSH or
+  x509 signing, `deny` mode and multi-repo chains also keep the old handoff.
+- New `COMMIT_GUARD_PINENTRY` (`auto`/`gui`/`off`).
+- **Fixed a false-positive block.** The opaque-construct check scanned the raw
+  command, so a heredoc body that held a backtick or `$(` (for example, a Python
+  script piped to `python3 - <<'EOF'` that happened to mention git) was blocked
+  even though it never runs git. It now scans the heredoc-stripped text, the
+  same text the parser sees.
+- Added `tests/` (unit + end-to-end against a throwaway repo, isolated HOME,
+  GNUPGHOME and git config).
 
 ### 1.1.1
 

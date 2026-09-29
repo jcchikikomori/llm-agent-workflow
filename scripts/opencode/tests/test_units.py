@@ -304,7 +304,7 @@ class PayloadStagingTests(PlanTestCase):
         self.assertTrue((stage / PAYLOAD_NAMESPACE / "commit-guard" / "hooks" / "nested" / "empty").is_dir())
         self.assertEqual(files_below(stage / PAYLOAD_NAMESPACE / "commit-guard"),
                          ["hooks/await_commit.sh", "hooks/commit_guard_hook.py", "hooks/evals.md", "hooks/hooks.json",
-                          "hooks/nested/keep.txt"])
+                          "hooks/nested/keep.txt", "hooks/project_exception.py"])
         mempalace = files_below(stage / PAYLOAD_NAMESPACE / "mempalace-docker")
         self.assertIn("hooks/vendor-notes.txt", mempalace)
         self.assertIn("scripts/mark_mined.py", mempalace)
