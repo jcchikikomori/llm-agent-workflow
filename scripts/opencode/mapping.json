@@ -30,5 +30,8 @@
     "writable_scope_dirs": ["plugins", "agents", "commands", "llm-agent-workflow"],
     "submodules": "approval"
   },
+  "legacy": [
+    { "path": "agents/opencode-gh-issue-to-pr.md", "plugin": "gh-issue-to-pr" }
+  ],
   "hand_written_agent_prefix": "opencode-"
 }

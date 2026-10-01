@@ -5,11 +5,14 @@ A unit is one thing the installer writes into a scope, named by its scope-relati
 - `dir`: one per `mapping.json` payload, `<payload_namespace>/<id>`, holding each `include` path at its path relative
   to the plugin dir. `__pycache__/`, `evals/` and `*.pyc` are always left out, and so is every path in the entry's own
   `exclude`. A symlink or special file in a payload rejects the unit.
-- `file`: a plugin `.ts` (`plugins/<basename>`), a hand-written `opencode-*.md` agent (`agents/<basename>`) or a
-  command (`commands/<basename>`), copied verbatim.
+- `file`: a plugin `.ts` (`plugins/<basename>`), a hand-written `opencode-X.md` agent (`agents/X.md`, the
+  `hand_written_agent_prefix` dropped) or a command (`commands/<basename>`), copied verbatim.
+- `legacy`: a `mapping.json` `legacy` path of a selected plugin that is present in the scope (D9). Nothing is staged
+  for it (`stage_rel` and hash are `-`); the installer removes it when the tracker records it and the guard allows the
+  delete, and only reports an untracked copy.
 
-Units sort `dir` first, then `file` units by kind (plugins, agents, commands); within a kind by plugin id, then
-`target_rel`. Staging copies a unit to `<stage>/<target_rel>`, exec bits included.
+Units sort `legacy` first, then `dir`, then `file` units by kind (plugins, agents, commands); within a rank by plugin
+id, then `target_rel`. Staging copies a unit to `<stage>/<target_rel>`, exec bits included.
 
 `tree_sha256` is the one tree hash: sha256 over the sorted `<relpath>\\0<exec bit 0|1>\\0<sha256 of file>\\n` entries of
 the regular files below a dir. A symlink is hashed as `<relpath>\\0l\\0<sha256 of its target text>\\n` and any other
@@ -31,10 +34,12 @@ import mapping
 
 DIR_UNIT = "dir"
 FILE_UNIT = "file"
+LEGACY_UNIT = "legacy"
 HASH_PREFIX = "sha256:"
 PAYLOAD_KIND = "payload"
 PLUGINS_KIND = "plugins"
 AGENTS_KIND = "agents"
+LEGACY_KIND = "legacy"
 # The `list` kinds that become file units, in install order; each installs into the scope dir of the same name.
 FILE_KINDS = (PLUGINS_KIND, AGENTS_KIND, "commands")
 ALWAYS_EXCLUDED_DIRS = frozenset(("__pycache__", "evals"))
@@ -63,16 +68,20 @@ class Unit:
 
     @property
     def stage_rel(self):
-        """Where the unit is staged below the stage dir: the stage mirrors the scope layout."""
-        return self.target_rel
+        """Where the unit is staged below the stage dir (the stage mirrors the scope layout); `-` for a legacy unit."""
+        return guard.NO_VALUE if self.unit == LEGACY_UNIT else self.target_rel
 
     @property
     def origin(self):
-        """The repo-relative path that names this unit in messages."""
+        """The repo-relative path (or `mapping.json` pointer) that names this unit in messages."""
         return self.sources[0][0]
 
     def sort_key(self):
-        rank = 0 if self.unit == DIR_UNIT else 1 + FILE_KINDS.index(self.kind)
+        """Legacy units first, then `dir` units, then `file` units by kind; within a rank by plugin id and target."""
+        if self.unit == LEGACY_UNIT:
+            rank = -1
+        else:
+            rank = 0 if self.unit == DIR_UNIT else 1 + FILE_KINDS.index(self.kind)
         return (rank, self.plugin, self.target_rel)
 
 
@@ -88,9 +97,32 @@ def payload_unit(plugin_id, relpaths, plugin_root, data):
     return Unit(plugin_id, DIR_UNIT, PAYLOAD_KIND, target_rel, sources, excludes)
 
 
-def file_unit(plugin_id, kind, relpath):
-    """A verbatim `file` unit: <kind>/<basename>."""
-    return Unit(plugin_id, FILE_UNIT, kind, f"{kind}/{PurePosixPath(relpath).name}", ((relpath, ""),))
+def file_target_name(kind, relpath, data):
+    """The installed basename of a `file` source; a hand-written agent drops its prefix (`opencode-X.md` → `X.md`)."""
+    name = PurePosixPath(relpath).name
+    if kind == AGENTS_KIND:
+        return name[len(data["hand_written_agent_prefix"]):]
+    return name
+
+
+def file_unit(plugin_id, kind, relpath, data):
+    """A verbatim `file` unit: <kind>/<installed basename>."""
+    return Unit(plugin_id, FILE_UNIT, kind, f"{kind}/{file_target_name(kind, relpath, data)}", ((relpath, ""),))
+
+
+def legacy_unit(index, entry):
+    """The `legacy` unit of `mapping.json` entry `/legacy/INDEX`; its origin names that pointer in messages."""
+    return Unit(entry["plugin"], LEGACY_UNIT, LEGACY_KIND, entry["path"], ((f"{mapping.LABEL}#/legacy/{index}", ""),))
+
+
+def legacy_units(data, plugins, scope_root):
+    """One `legacy` unit per `legacy` entry of a plugin in PLUGINS whose path is present below SCOPE_ROOT.
+
+    An absent legacy path has nothing to remove or report, so it plans nothing. Only the installer reads the tracker,
+    so it tells a tracked copy (removed) from an untracked one (reported and kept).
+    """
+    return [legacy_unit(index, entry) for index, entry in enumerate(data.get("legacy", []))
+            if entry["plugin"] in plugins and os.path.exists(os.path.join(scope_root, entry["path"]))]
 
 
 def _installs_as_file(kind, relpath, data):
@@ -109,10 +141,12 @@ def _check_unique_targets(units):
                                        f"{unit.target_rel} is also the target of {other.origin}")
 
 
-def build_units(sources, data, plugin_roots):
-    """The sorted units for SOURCES (`convert.py list` rows); PLUGIN_ROOTS maps an id to its plugin dir relpath.
+def build_units(sources, data, plugin_roots, scope_root):
+    """The sorted units for SOURCES (`convert.py list` rows, already limited to the selected plugins); PLUGIN_ROOTS
+    maps an id to its plugin dir relpath, and SCOPE_ROOT is where the selected plugins' `legacy` paths are looked for.
 
-    Two units with one target_rel are fatal: neither could be installed without overwriting the other.
+    Two units with one target_rel are fatal: neither could be installed without overwriting the other. A `legacy` path
+    that is also a current target counts too.
     """
     payloads = {}
     units = []
@@ -120,9 +154,10 @@ def build_units(sources, data, plugin_roots):
         if kind == PAYLOAD_KIND:
             payloads.setdefault(plugin_id, []).append(relpath)
         elif _installs_as_file(kind, relpath, data):
-            units.append(file_unit(plugin_id, kind, relpath))
+            units.append(file_unit(plugin_id, kind, relpath, data))
     units += [payload_unit(plugin_id, relpaths, plugin_roots[plugin_id], data)
               for plugin_id, relpaths in payloads.items()]
+    units += legacy_units(data, {plugin_id for plugin_id, _kind, _relpath in sources}, scope_root)
     _check_unique_targets(units)
     return sorted(units, key=Unit.sort_key)
 
@@ -169,10 +204,12 @@ def _copy_payload(source, dest, unit_rel, excludes, where):
 
 
 def stage_unit(repo, unit, stage):
-    """Copy UNIT from REPO to <STAGE>/<stage_rel> and return its `sha256:<hex>`.
+    """Copy UNIT from REPO to <STAGE>/<stage_rel> and return its `sha256:<hex>`; a `legacy` unit stages nothing (`-`).
 
     Raises UnitRejected for a payload entry that is not a regular file or dir; a partial copy is removed first.
     """
+    if unit.unit == LEGACY_UNIT:
+        return guard.NO_VALUE
     dest = os.path.join(stage, unit.stage_rel)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     if unit.unit == FILE_UNIT:

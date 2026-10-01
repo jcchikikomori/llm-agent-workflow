@@ -251,6 +251,11 @@ tracked_hash() {
   T="$1" P="$2" awk -F'\t' '$1 == ENVIRON["T"] && $3 == ENVIRON["P"] { print $5; exit }' <<<"$TRACKER_ROWS"
 }
 
+# The stored tracker row of (TYPE, PATH), or nothing.
+tracked_row() {
+  T="$1" P="$2" awk -F'\t' '$1 == ENVIRON["T"] && $3 == ENVIRON["P"] { print; exit }' <<<"$TRACKER_ROWS"
+}
+
 add_row() {  # the current unit, as a tracker row with the staged hash
   printf '%s\n' "$unit$TAB$plugin$TAB$target_rel$TAB$realpath$TAB$hash$TAB$repo" >>"$ADD_ROWS"
 }
@@ -403,6 +408,7 @@ dry_run_unit() {
 # install_unit handles the current plan row; it returns 1 only on (a)bort.
 install_unit() {
   local tracked
+  if [[ "$unit" == "legacy" ]]; then legacy_unit; return 0; fi
   if [[ "$DRY_RUN" -eq 1 ]]; then dry_run_unit; return 0; fi
   case "$verdict" in
     ok) ;;
@@ -435,19 +441,57 @@ install_unit() {
   return 0
 }
 
+# --- Legacy units (D9) -------------------------------------------------------
+# legacy_unit handles a plan row for a path an earlier release installed under
+# another name (mapping.json `legacy`; plan lists the selected plugins' entries
+# that are present). The file is removed, and its row dropped, only when the
+# tracker has a row for it and the guard allows the delete; a copy with no row
+# is reported and kept byte for byte.
+legacy_unit() {
+  local stored
+  stored="$(tracked_row file "$target_rel")"
+  if [[ -z "$stored" ]]; then
+    if [[ -e "$realpath" ]]; then printf '%s[LEGACY-UNTRACKED]%s %s\n' "$C_SKIP" "$C_RST" "$target_rel"; fi
+    return 0
+  fi
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    if [[ "$verdict" == blocked:* ]]; then
+      say "$C_SKIP" "[DRY-RUN]" "BLOCKED $target_rel $verdict"
+    else
+      say "$C_SKIP" "[DRY-RUN]" "REMOVED-LEGACY $target_rel $verdict"
+    fi
+    return 0
+  fi
+  if ! guard_approved delete "$realpath"; then report_blocked "$GUARD_VERDICT"; return 0; fi
+  if [[ "$GUARD_REALPATH" != "$realpath" ]]; then report_blocked "blocked:realpath changed since plan"; return 0; fi
+  remember_origin "$GUARD_REPO" "$GUARD_ORIGIN"
+  if [[ ! -e "$realpath" ]]; then
+    say "$C_SKIP" "[SKIP]" "$target_rel (not present)"
+    SKIPPED=$((SKIPPED + 1))
+    printf '%s\n' "$stored" >>"$REMOVE_ROWS"
+    return 0
+  fi
+  if [[ -d "$realpath" ]]; then report_failed "target is not a file"; return 0; fi
+  if ! rm -f -- "$realpath"; then report_failed "delete failed"; return 0; fi
+  say "$C_OK" "[REMOVED-LEGACY]" "$target_rel"
+  REMOVED=$((REMOVED + 1))
+  record_change removed
+  printf '%s\n' "$stored" >>"$REMOVE_ROWS"
+}
+
 # --- Notices (report only) ---------------------------------------------------
 # double_load_notices warns once per planned plugin file that the other
 # scope's tracker (OTHER_TRACKER) also records: opencode loads both copies.
 # An invalid other tracker is a WARN too; neither ever changes anything.
 double_load_notices() {
-  local other_rows target
+  local other_rows row_unit target
   if ! other_rows="$(convert tracker read --tracker "$OTHER_TRACKER")"; then
     printf 'WARN %s: double-load: the %s scope tracker is invalid; its plugin files were not checked\n' \
       "$OTHER_TRACKER" "$OTHER_SCOPE" >&2
     return 0
   fi
-  while IFS="$TAB" read -r _ _ _ target _; do
-    if [[ "$target" == plugins/* ]] \
+  while IFS="$TAB" read -r _ row_unit _ target _; do
+    if [[ "$row_unit" != "legacy" && "$target" == plugins/* ]] \
       && T="$target" awk -F'\t' '$3 == ENVIRON["T"] { found = 1 } END { exit !found }' <<<"$other_rows"; then
       printf 'WARN: %s is also installed in the %s scope; opencode loads both copies; hooks run twice\n' \
         "$target" "$OTHER_SCOPE" >&2
@@ -731,8 +775,8 @@ while IFS="$TAB" read -r plugin unit stage_rel target_rel hash realpath repo ver
 done 3<<<"$PLAN"
 
 # --- Write tracker -----------------------------------------------------------
-if [[ "$DRY_RUN" -eq 0 && -s "$ADD_ROWS" ]]; then
-  write_tracker --add "$ADD_ROWS" --header \
+if [[ "$DRY_RUN" -eq 0 && ( -s "$ADD_ROWS" || -s "$REMOVE_ROWS" ) ]]; then
+  write_tracker --add "$ADD_ROWS" --remove "$REMOVE_ROWS" --header \
     "installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "repo_root=$REPO_ROOT" "scope=$SCOPE" \
     "scope_root=$TARGET_ROOT" "payload_root=$PAYLOAD_NAMESPACE" "allowed_repos=$(allowed_repos_value)"
 fi
@@ -741,6 +785,7 @@ fi
 # --- Summary -----------------------------------------------------------------
 hdr "Summary"
 printf '  written:  %d\n' "$WRITTEN"
+printf '  removed:  %d\n' "$REMOVED"
 printf '  same:     %d\n' "$SAME"
 printf '  skipped:  %d\n' "$SKIPPED"
 printf '  blocked:  %d\n' "$BLOCKED"
@@ -757,21 +802,6 @@ plugin_in_scope() {
     grep -q "^${name}|" <<<"$DISCOVERED"
   fi
 }
-
-if plugin_in_scope "gh-issue-to-pr" && [[ "$DRY_RUN" -ne 1 ]]; then
-  hdr "Add this to your opencode.json (manual)"
-  cat <<'EOF'
-{
-  "agent": {
-    "gh-issue-to-pr": {
-      "description": "Drives a single GitHub issue end-to-end to a merged PR",
-      "mode": "subagent",
-      "permission": { "edit": "allow", "bash": "allow", "webfetch": "allow" }
-    }
-  }
-}
-EOF
-fi
 
 if plugin_in_scope "wandavision" && [[ "$DRY_RUN" -ne 1 ]]; then
   hdr "wandavision follow-up"

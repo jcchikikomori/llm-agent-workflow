@@ -51,6 +51,14 @@ COMMIT_GUARD_UNITS = [
     ("commit-guard", "file", "plugins/opencode-commit-guard.ts"),
     ("commit-guard", "file", "commands/commit-guard.md"),
 ]
+HAND_WRITTEN_AGENT_PREFIX = "opencode-"
+GH_PLUGIN = "gh-issue-to-pr"
+GH_AGENT_SOURCE = REPO_ROOT / "plugin-gh-issue-to-pr" / "agents" / "opencode-gh-issue-to-pr.md"
+GH_CLAUDE_AGENT_SOURCE = REPO_ROOT / "plugin-gh-issue-to-pr" / "agents" / "gh-issue-to-pr.md"
+GH_AGENT_REL = "agents/gh-issue-to-pr.md"
+GH_LEGACY_AGENT_REL = "agents/opencode-gh-issue-to-pr.md"
+GH_COMMAND_REL = "commands/gh-issue-to-pr.md"
+OLD_INSTALL_TEXT = "the agent an earlier release installed\n"
 
 
 def import_units():
@@ -82,6 +90,14 @@ def rows_of(result):
 
 def units_of(result):
     return [(row[0], row[1], row[3]) for row in rows_of(result)]
+
+
+def installed_target(kind, relpath):
+    """The scope-relative target of a `file` source: <kind>/<basename>, minus the hand-written prefix for an agent."""
+    name = Path(relpath).name
+    if kind == "agents":
+        name = name.removeprefix(HAND_WRITTEN_AGENT_PREFIX)
+    return f"{kind}/{name}"
 
 
 def files_below(root):
@@ -185,8 +201,7 @@ class PlanRepoTests(PlanTestCase):
         self.assertEqual(unit_column, ["dir"] * len(PAYLOAD_PLUGINS) + ["file"] * (len(rows) - len(PAYLOAD_PLUGINS)))
         file_keys = [(FILE_KIND_ORDER.index(row[3].split("/")[0]), row[0], row[3]) for row in rows if row[1] == "file"]
         self.assertEqual(file_keys, sorted(file_keys))
-        self.assertEqual([row[3] for row in rows if row[3].startswith("agents/")],
-                         ["agents/opencode-gh-issue-to-pr.md"])
+        self.assertEqual([row[3] for row in rows if row[3].startswith("agents/")], [GH_AGENT_REL])
         self.assertIn("plugins/opencode-wandavision.ts", [row[3] for row in rows])
         for plugin, unit, stage_rel, target_rel, digest, realpath, repo, verdict in rows:
             with self.subTest(target_rel):
@@ -205,7 +220,7 @@ class PlanRepoTests(PlanTestCase):
         stage = self.new_stage(sandbox)
         plugin_dirs = plugin_dirs_by_name()
         listed = run_convert("list", "--repo", REPO_ROOT, sandbox=sandbox)
-        file_sources = {f"{kind}/{Path(relpath).name}": REPO_ROOT / relpath
+        file_sources = {installed_target(kind, relpath): REPO_ROOT / relpath
                         for _plugin, kind, relpath in (line.split("|") for line in listed.stdout.splitlines())}
 
         result = self.plan(sandbox, stage=stage)
@@ -479,6 +494,73 @@ class PlanVerdictTests(PlanTestCase):
                     "commands/commit-guard.md": (str(scope / "commands" / "commit-guard.md"), NO_VALUE, "ok"),
                 })
                 self.assertEqual(snapshot(superproject), before)
+
+
+class LegacyUnitTests(PlanTestCase):
+    """`legacy` units (D9): a selected plugin's legacy path that is present plans a delete unit, and nothing is staged
+    for it. Whether the installer removes it (tracker row) or only reports it (no row) is decided from the tracker,
+    which only the installer reads: Task 2.1's scratch smoke and E2E row 6 (Task 3.1) cover that half."""
+
+    # AC-043 (unit level: the agent rename and the planned legacy delete); the machinery behind AC-010 (E2E row 6)
+    def test_a_present_legacy_path_of_a_selected_plugin_plans_a_delete_unit_first_and_stages_nothing_for_it(self):
+        sandbox = self.new_sandbox()
+        scope = self.scope_of(sandbox)
+        legacy_file = write(scope / GH_LEGACY_AGENT_REL, OLD_INSTALL_TEXT)
+        stage = self.new_stage(sandbox)
+
+        result = self.plan(sandbox, "--plugin", GH_PLUGIN, scope=scope, stage=stage)
+
+        self.assertEqual((result.returncode, result.stderr), (EXIT_OK, ""))
+        rows = rows_of(result)
+        self.assertEqual(rows[0], [GH_PLUGIN, "legacy", NO_VALUE, GH_LEGACY_AGENT_REL, NO_VALUE, str(legacy_file),
+                                   NO_VALUE, "ok"])
+        self.assertEqual(units_of(result)[1:], [(GH_PLUGIN, "file", GH_AGENT_REL), (GH_PLUGIN, "file", GH_COMMAND_REL)])
+        self.assertEqual(rows[1][4], f"sha256:{sha256_of(GH_AGENT_SOURCE.read_bytes())}")
+        self.assertEqual(files_below(stage), [GH_AGENT_REL, GH_COMMAND_REL])
+        self.assertEqual((stage / GH_AGENT_REL).read_bytes(), GH_AGENT_SOURCE.read_bytes())
+        self.assertNotEqual(GH_CLAUDE_AGENT_SOURCE.read_bytes(), GH_AGENT_SOURCE.read_bytes())
+        self.assertEqual(legacy_file.read_text(), OLD_INSTALL_TEXT)
+
+    def test_a_legacy_path_plans_nothing_when_absent_or_when_its_plugin_is_not_selected(self):
+        seed = lambda scope: write(scope / GH_LEGACY_AGENT_REL, OLD_INSTALL_TEXT)  # noqa: E731
+        cases = {
+            "absent, its plugin selected": (lambda scope: None, ("--plugin", GH_PLUGIN), 0),
+            "present, another plugin selected": (seed, ("--plugin", "commit-guard"), 0),
+            "present, every plugin selected": (seed, (), 1),
+        }
+        for name, (prepare, args, count) in cases.items():
+            with self.subTest(name):
+                sandbox = self.new_sandbox()
+                scope = self.scope_of(sandbox)
+                prepare(scope)
+                before = snapshot(scope)
+                legacy_row = [GH_PLUGIN, "legacy", NO_VALUE, GH_LEGACY_AGENT_REL, NO_VALUE,
+                              str(scope / GH_LEGACY_AGENT_REL), NO_VALUE, "ok"]
+
+                result = self.plan(sandbox, *args, scope=scope)
+
+                self.assertEqual((result.returncode, result.stderr), (EXIT_OK, ""))
+                rows = rows_of(result)
+                self.assertEqual(rows[:count], [legacy_row] * count)
+                self.assertEqual([row for row in rows[count:] if row[1] == "legacy"], [])
+                self.assertEqual(snapshot(scope), before)
+
+    def test_a_legacy_path_that_is_also_a_current_target_is_fatal_before_anything_is_staged(self):
+        sandbox = self.new_sandbox()
+        repo = make_fixture_repo(sandbox, ("plugin-commit-guard",), ("commit-guard",))
+        mapping_path = repo / "scripts" / "opencode" / "mapping.json"
+        data = json.loads(mapping_path.read_text())
+        data["legacy"] = [{"path": "commands/commit-guard.md", "plugin": "commit-guard"}]
+        mapping_path.write_text(json.dumps(data))
+        scope = self.scope_of(sandbox)
+        write(scope / "commands" / "commit-guard.md", OLD_INSTALL_TEXT)
+        stage = self.new_stage(sandbox)
+
+        result = self.plan(sandbox, repo=repo, scope=scope, stage=stage)
+
+        self.assert_fatal(result, "ERROR mapping.json#/legacy/0: duplicate-target: commands/commit-guard.md is also "
+                                  "the target of plugin-commit-guard/commands/commit-guard.md")
+        self.assertEqual(os.listdir(stage), [])
 
 
 class PluginNameTests(PlanTestCase):

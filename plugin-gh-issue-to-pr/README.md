@@ -10,22 +10,22 @@ The `gh-issue-to-pr` agent runs the full lifecycle:
 
 1. **Investigate** — fetch the issue, read the code paths it touches, form a root-cause
    hypothesis (not just the reporter's proposed fix)
-2. **Plan** — root cause, fix, files to touch, risk/blast-radius; asks before committing to a
+1. **Plan** — root cause, fix, files to touch, risk/blast-radius; asks before committing to a
    path with a real tradeoff
-3. **Branch** — detects the repo's branch model and base branch (git-flow aware), creates
+1. **Branch** — detects the repo's branch model and base branch (git-flow aware), creates
    `feature/`/`bugfix/`/`hotfix/<issue#>-<slug>`
-4. **Scout** — searches for existing utilities/patterns to reuse before writing new code
-5. **Implement** — matches surrounding style, no unrelated refactors or scope creep
-6. **Test locally** — whatever the repo defines (test suite, linter, Docker Compose)
-7. **Stage** — adds only the changed files, reviews the staged diff for anything that
+1. **Scout** — searches for existing utilities/patterns to reuse before writing new code
+1. **Implement** — matches surrounding style, no unrelated refactors or scope creep
+1. **Test locally** — whatever the repo defines (test suite, linter, Docker Compose)
+1. **Stage** — adds only the changed files, reviews the staged diff for anything that
    shouldn't be there
-8. **Draft commit message, then stop** — never runs `git commit`/`git push` itself; the user
+1. **Draft commit message, then stop** — never runs `git commit`/`git push` itself; the user
    commits and pushes
-9. **Open the PR** — once pushed, `gh pr create` with a Summary + Test Plan checklist
-10. **Review the PR** — re-reads the diff fresh against correctness/scope/convention
-11. **Update the checklist** — ticks off verified Test Plan items
-12. **Merge, with confirmation** — checks CI/review threads, never merges on its own initiative
-13. **Close the issue, with confirmation** — only if merge didn't already auto-close it
+1. **Open the PR** — once pushed, `gh pr create` with a Summary + Test Plan checklist
+1. **Review the PR** — re-reads the diff fresh against correctness/scope/convention
+1. **Update the checklist** — ticks off verified Test Plan items
+1. **Merge, with confirmation** — checks CI/review threads, never merges on its own initiative
+1. **Close the issue, with confirmation** — only if merge didn't already auto-close it
 
 It always reads the target repo's own `CLAUDE.md`/`AGENTS.md`/`CONTRIBUTING.md` first and
 defers to those conventions over its own defaults — it's designed to be portable across
@@ -69,6 +69,17 @@ it." (also via `/gh-issue-to-pr I've pushed, open the PR`).
 
 ## Changelog
 
+### 1.1.0
+
+- opencode: the hand-written agent now installs as `agents/gh-issue-to-pr.md`. `setup-opencode.sh` removes the old
+  `agents/opencode-gh-issue-to-pr.md` when its tracker recorded that file (`[REMOVED-LEGACY]`) and only reports a copy
+  it did not install (`[LEGACY-UNTRACKED]`).
+- The opencode agent asks through the `question` tool instead of `AskUserQuestion`.
+- The agent and command descriptions are single-quoted YAML scalars, so the `#N` trigger phrases survive parsing. The
+  skill description now fits in 250 bytes.
+- The installer no longer prints the gh-issue-to-pr `opencode.json` snippet; its key did not match the agent name.
+- No change to the Claude Code agent or to the issue-to-PR workflow itself.
+
 ### 1.0.0
 
 Major release for repository rename to `llm-agent-workflow`.
@@ -78,7 +89,8 @@ Major release for repository rename to `llm-agent-workflow`.
 
 ### 0.3.0
 
-Added `opencode-gh-issue-to-pr.md` subagent (`permission:` replaces the deprecated `tools:` field) and `/gh-issue-to-pr` slash command (`commands/gh-issue-to-pr.md`). Added OpenCode npm package manifest.
+Added `opencode-gh-issue-to-pr.md` subagent (`permission:` replaces the deprecated `tools:` field) and
+`/gh-issue-to-pr` slash command (`commands/gh-issue-to-pr.md`). Added OpenCode npm package manifest.
 
 ### 0.2.0
 

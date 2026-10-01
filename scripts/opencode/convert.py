@@ -278,7 +278,7 @@ def run_plan(args):
     data = mapping.load(mapping.repo_mapping_path(repo))
     sources = _selected_sources(args, list_sources(repo, data))
     plugin_roots = {plugin_id: _relpath(repo, path) for plugin_id, path in discover_plugin_dirs(repo).items()}
-    unit_list = units.build_units(sources, data, plugin_roots)
+    unit_list = units.build_units(sources, data, plugin_roots, args.scope_root)
     policy = guard.GuardPolicy.from_mapping(data["guard"], args.scope_root, args.allow_repo)
     scope_roots = guard.containment_roots(args.scope_root, policy.writable_scope_dirs)
     stage = units.check_stage(args.stage, (("the repo", [os.path.realpath(repo)]), ("the scope", scope_roots)))

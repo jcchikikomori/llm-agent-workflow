@@ -1,11 +1,11 @@
 ---
-description: Slash-command entry point for the gh-issue-to-pr agent — drives a single GitHub issue (by number, URL, or free-text reference) end-to-end to a merged PR — investigate, plan, branch, implement, test, commit (with confirmation), PR, review, merge, close. Use when the user runs /gh-issue-to-pr, or asks to "pick up issue #N", "work ticket #N end to end", or resume mid-flow ("I've pushed, open the PR", "checks are green, merge it").
+description: 'Slash-command entry point for the gh-issue-to-pr agent — drives a single GitHub issue (by number, URL, or free-text reference) end-to-end to a merged PR — investigate, plan, branch, implement, test, commit (with confirmation), PR, review, merge, close. Use when the user runs /gh-issue-to-pr, or asks to "pick up issue #N", "work ticket #N end to end", or resume mid-flow ("I''ve pushed, open the PR", "checks are green, merge it").'
 ---
 
 # gh-issue-to-pr
 
 `/gh-issue-to-pr $ARGUMENTS` is a slash-command entry point for this plugin's own
-`gh-issue-to-pr` agent (`agents/opencode-gh-issue-to-pr.md`). It means exactly the same thing
+`gh-issue-to-pr` agent (`agents/gh-issue-to-pr.md`). It means exactly the same thing
 as the natural-language triggers the agent already documents — e.g. "pick up issue #42",
 "work ticket #17 end to end", or a raw issue URL. This command exists only to route the slash
 command; the agent's system prompt is the single source of truth for the actual workflow

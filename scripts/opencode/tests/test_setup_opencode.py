@@ -959,8 +959,7 @@ class RepositoryGuardTests(unittest.TestCase):
         self.assertEqual(forced.returncode, EXIT_FAILED, forced.stdout + forced.stderr)
         lines = forced.stdout.splitlines()
         self.assertIn(f"[BLOCKED] commands/gh-issue-to-pr.md: G1 (repo: {skills_md} {SKILLS_MD_ORIGIN})", lines)
-        # Today's hand-written agent name; Task 2.1 renames it to agents/gh-issue-to-pr.md.
-        self.assertIn(f"[BLOCKED] agents/opencode-gh-issue-to-pr.md: G1 (repo: {start} {START_ORIGIN})", lines)
+        self.assertIn(f"[BLOCKED] agents/gh-issue-to-pr.md: G1 (repo: {start} {START_ORIGIN})", lines)
         self.assert_checkout_untouched(sandbox, skills_md, checkout_before)
 
         (scope / TRACKER_NAME).write_text(

@@ -4,7 +4,7 @@ This fork is porting its plugins to [opencode](https://opencode.ai), so the same
 work in both Claude Code and opencode. The work happens on the `feature/port-to-opencode` branch. Each phase lands as
 its own commit, and this file is updated in each one.
 
-Last updated: 2026-09-26.
+Last updated: 2026-10-01.
 
 ## Status at a glance
 
@@ -12,7 +12,7 @@ Last updated: 2026-09-26.
 | --- | --- | --- |
 | 0 | Test harness for the installer and the ports | Done |
 | 1 | Installer core, and payload resolution for the existing ports | Done |
-| 2 | Legacy file cleanup and the gh-issue-to-pr agent | Planned |
+| 2 | Legacy file cleanup and the gh-issue-to-pr agent | Done |
 | 3 | `claude-attribution` becomes `ai-attribution` | Planned |
 | 4 | Skill pipeline | Planned |
 | 5 | Config snippets, `--merge`, and the LSP and MemPalace ports | Planned |
@@ -84,7 +84,7 @@ This is the target state. A plugin counts as supported only when its phase is do
 
 ### Phase 2: legacy cleanup and gh-issue-to-pr
 
-- [ ] 2.1 Remove files from older installs, and rename the gh-issue-to-pr agent
+- [x] 2.1 Remove files from older installs, and rename the gh-issue-to-pr agent
 
 ### Phase 3: ai-attribution
 

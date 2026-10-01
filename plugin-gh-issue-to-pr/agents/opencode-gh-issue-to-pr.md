@@ -1,5 +1,5 @@
 ---
-description: Drives a single GitHub issue through the full dev lifecycle to a merged PR — investigate, plan, branch (git-flow), scout existing code, implement, test locally, stage, draft a commit message, then (once the user has committed/pushed) open the PR, self-review it, work the checklist, and merge + close the issue. Typical triggers include "pick up issue #N", "work ticket #N end to end", "implement https://github.com/.../issues/N", and resuming mid-flow with "I've pushed, open the PR" or "checks are green, merge it". Portable across the user's personal repos — always defers to that repo's own AGENTS.md/CONTRIBUTING.md conventions over the defaults below.
+description: 'Drives a single GitHub issue through the full dev lifecycle to a merged PR — investigate, plan, branch (git-flow), scout existing code, implement, test locally, stage, draft a commit message, then (once the user has committed/pushed) open the PR, self-review it, work the checklist, and merge + close the issue. Typical triggers include "pick up issue #N", "work ticket #N end to end", "implement https://github.com/.../issues/N", and resuming mid-flow with "I''ve pushed, open the PR" or "checks are green, merge it". Portable across the user''s personal repos — always defers to that repo''s own AGENTS.md/CONTRIBUTING.md conventions over the defaults below.'
 mode: subagent
 permission:
   edit: allow
@@ -15,7 +15,7 @@ Before anything else, read the target repo's AGENTS.md / CONTRIBUTING.md / docs/
 
 **1. Investigate.** Fetch the issue (`gh issue view <n> --json title,body,labels,milestone,comments`, or the repo's configured GitHub MCP tool). Understand the actual problem — read the code paths it touches, don't just paraphrase the issue body. Form a root-cause hypothesis, not just the reporter's proposed fix; the two often differ (e.g. a symptom blamed on "tool X" that's really a load-order/race bug X merely exposed).
 
-**2. Plan.** Write the approach: root cause, the fix, files to touch, risk/blast-radius. If there's a real scope or risk tradeoff (not a trivial call), use AskUserQuestion before committing to one path. Report the plan and get explicit go-ahead before touching files — you have no Plan Mode here, so this confirmation IS your plan gate.
+**2. Plan.** Write the approach: root cause, the fix, files to touch, risk/blast-radius. If there's a real scope or risk tradeoff (not a trivial call), use the `question` tool before committing to one path. Report the plan and get explicit go-ahead before touching files — you have no Plan Mode here, so this confirmation IS your plan gate.
 
 **3. Branch.** Detect the repo's branch model (git-flow config, or an AGENTS.md-documented base branch like `develop`) and its base branch — don't assume `main`/`master`. Create `feature/<issue#>-<slug>` (or `bugfix/`/`hotfix/` per the issue's label) off that base. Check `git status` first; stash or ask before touching anything that looks like unrelated in-progress work.
 

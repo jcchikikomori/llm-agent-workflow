@@ -1,6 +1,6 @@
 {
   "name": "opencode-gh-issue-to-pr",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Drives a single GitHub issue end-to-end to a merged PR — investigate, plan, branch, implement, test, and (with explicit confirmation at each hard-to-reverse step) commit, open PR, review, merge, and close",
   "type": "module",
   "author": {
