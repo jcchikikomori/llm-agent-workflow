@@ -1,0 +1,1 @@
+resource-guard shim directory marker: the shim skips every PATH entry holding this file when it looks for the real docker.

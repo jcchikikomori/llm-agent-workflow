@@ -1,0 +1,3 @@
+#!/bin/sh
+# resource-guard: label containers this Claude Code session starts (see scripts/docker-shim.sh).
+exec /bin/sh "${0%/*}/../scripts/docker-shim.sh" docker "$@"

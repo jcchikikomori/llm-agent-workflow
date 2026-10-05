@@ -1,0 +1,25 @@
+{
+  "name": "resource-guard",
+  "version": "0.2.0",
+  "description": "Keeps concurrent Claude Code sessions from hanging the machine: gates new heavy work under memory pressure, freezes background sessions' Bash work and Docker containers, resumes them when load drops, and caps each session's docker MCP/LSP containers; WSL-aware",
+  "author": {
+    "name": "John Cyrill Corsanes",
+    "url": "https://github.com/jcchikikomori"
+  },
+  "homepage": "https://github.com/jcchikikomori/llm-agent-workflow",
+  "repository": "https://github.com/jcchikikomori/llm-agent-workflow.git",
+  "license": "MIT",
+  "keywords": [
+    "resources",
+    "memory",
+    "psi",
+    "docker",
+    "wsl",
+    "watchdog",
+    "hooks",
+    "behavior-control"
+  ],
+  "skills": [
+    "./skills/resource-guard"
+  ]
+}

@@ -131,6 +131,12 @@
       "source": "./plugin-markdown-lsp",
       "description": "Markdown diagnostics \u2014 rumdl LSP pushes markdownlint-compatible offenses after every .md/.mdx edit, bundled config mirrors the skills-md markdown standards, Docker-first with host fallback",
       "category": "quality-enforcement"
+    },
+    {
+      "name": "resource-guard",
+      "source": "./plugin-resource-guard",
+      "description": "Keeps concurrent Claude Code sessions from hanging the machine \u2014 gates new heavy work under memory pressure, freezes background sessions' Bash work and Docker containers, resumes them when load drops, caps each session's docker MCP/LSP containers; WSL-aware",
+      "category": "behavior-control"
     }
   ]
 }

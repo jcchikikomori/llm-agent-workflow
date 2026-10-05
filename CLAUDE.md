@@ -55,6 +55,7 @@ All three must be kept in sync. Update them together whenever the version change
 - `plugin-mempalace-docker/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart (it vendors MemPalace hook scripts but is versioned independently of MemPalace).
 - `plugin-ruby-lsp/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 - `plugin-markdown-lsp/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
+- `plugin-resource-guard/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 
 ### When to bump versions
 
@@ -145,6 +146,7 @@ This registers the marketplace from the GitHub repo. Claude Code reads `.claude-
 /plugin install mempalace-docker@llm-agent-workflow
 /plugin install ruby-lsp@llm-agent-workflow
 /plugin install markdown-lsp@llm-agent-workflow
+/plugin install resource-guard@llm-agent-workflow
 /plugin install token-saver@llm-agent-workflow
 /plugin install wandavision@llm-agent-workflow
 
@@ -178,6 +180,7 @@ Always reload after installing, updating, or switching plugins within the same s
 | `mempalace-docker` | behavior-control | Runs MemPalace entirely from Docker — MCP server, CLI, and save hooks. Auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one palace in a named volume, mounts the current project, and auto-mines per project. **Replaces** the official `mempalace` plugin |
 | `ruby-lsp` | quality-enforcement | LSP + hook + skill — ruby-lsp (RuboCop diagnostics after every `.rb` edit), advisory Reek smells via PostToolUse, Docker-first wrapper with host fallback. Install **instead of** the official `ruby-lsp` plugin |
 | `markdown-lsp` | quality-enforcement | LSP + skill — rumdl pushes markdownlint-compatible diagnostics after every `.md`/`.mdx` edit; bundled config mirrors `skills-md:markdown`, project config wins. Docker-first wrapper with native binary, `uvx`, `npx` fallbacks. Complements `markdown-format` |
+| `resource-guard` | behavior-control | Hooks + detached watchdog + CLI — reads memory, swap and PSI stall (plus Windows host memory on WSL2), gates new heavy work from background sessions, freezes their Bash work (SIGSTOP) and shim-labeled Docker containers (`docker pause`) under pressure, and auto-resumes them when load drops. Caps each session's docker MCP/LSP server containers once its shim is on Claude Code's `PATH`. Ships in `observe` freeze mode |
 | `token-saver` | behavior-control | Enforces token-efficient prompting and session hygiene |
 | `wandavision` | quality-enforcement | Deterministic image analysis via `mcp-vision` |
 | `metronome` | behavior-control | External — keeps workflows procedural and step-driven |
@@ -305,6 +308,26 @@ Shared rules:
 - Known quirk: the LSP sees Claude's edit **before** `markdown-format`'s PostToolUse hook rewrites the file, so offenses the formatter fixes (MD004, MD040 and similar) can still show up once as out-of-date diagnostics. Check the file before acting on them.
 
 **Tests:** `python3 -m unittest discover -s plugin-markdown-lsp/tests`
+
+---
+
+### resource-guard plugin
+
+**Purpose:** Keep several concurrent Claude Code sessions from hanging the machine. It gates new heavy work under memory pressure, and it freezes, then auto-resumes, the Bash work and Docker containers of sessions the user is not typing in.
+
+**How it works:**
+
+- **Level** (`ok` / `elevated` / `critical` / `hard`) comes from `/proc/meminfo`, swap and PSI stall % (`/proc/pressure/*`). On WSL2 the watchdog also reads Windows host memory and commit through `powershell.exe`, because the VM's own view hides host exhaustion. CPU never raises the level past `elevated`.
+- **Hooks** (`hooks/resource_guard_hook.py`, one fail-open entrypoint): SessionStart puts `shims/` on the Bash tool's `PATH` via `CLAUDE_ENV_FILE`, refreshes the stable `~/.claude/.resource-guard/shims` link and `shim.conf`, and starts the watchdog; UserPromptSubmit marks the foreground session and resumes it if frozen; PreToolUse is the gate; PostToolUse tells Claude its work was frozen; SessionEnd only drops a request file.
+- **Gate:** heavy calls (Agent/Task/Workflow, Monitor, background Bash, build/test/install/container commands) from a background session wait up to 20 s for calm. At `elevated` they then pass; at `critical`/`hard` they are denied. The foreground session gets `ask` instead. Relief commands (`docker stop`, `kill`, the CLI) always pass, and the gate never answers `allow`.
+- **Watchdog** (`scripts/watchdog.py`): one detached process per machine, singleton via `flock`. At `critical` it freezes one background session at a time and escalates only while PSI or memory keeps getting worse; at `hard` it freezes all of them. It resumes one session every 20 s after 3 calm samples, and resumes everything when it exits. A hook that can take the lock knows the watchdog died, so it resumes everything and respawns it.
+- **What freezes:** processes whose environ carries `CLAUDE_PID=<session pid>` (SIGSTOP through `pidfd`, start-time checked), minus claude, hook, `git`/`ssh`/`gpg` subtrees and detached daemons. Containers pause only when the `shims/docker` label shim tagged them with `dev.claude.pid` and every session using them is a freeze target. Compose services and `never_pause` globs (databases) are skipped.
+- **Session servers (0.2.0):** with `export PATH="$HOME/.claude/.resource-guard/shims:$PATH"` in the user's shell rc, the shim also sees the docker MCP/LSP servers Claude Code starts (nearest `claude` ancestor ≤ 4 levels up, no `CLAUDE_PID` on the way) and the containers hooks run (`CLAUDE_PID` plus `CLAUDE_PLUGIN_ROOT`/`CLAUDE_PROJECT_DIR`). It labels them `dev.claude.role=server` (never paused, never stopped, counted in the session's baseline) and inserts `--memory` from `server_caps` before the image, at creation, because a JVM sizes its heap from the limit it sees at startup. A limit in the server's own config wins (`-m`/`--memory`, bundled `-dm 512m`, `--memory-reservation`, `--memory-swap`), the cap goes before a `--`, and `compose run` gets labels only. `doctor` checks each session's `PATH` and prints the line when it's missing. Without that line, MCP/LSP containers stay unlabeled and are never paused or capped.
+- **Modes:** `freeze_mode` ships as `observe` (the watchdog logs `would-freeze` and touches nothing). Set `"freeze_mode": "enforce"` in `~/.claude/resource-guard.json` to freeze for real. Kill switch: `RESOURCE_GUARD_DISABLE=1`.
+- **CLI:** `scripts/resource_guard.py` (`status`, `sessions`, `freeze`, `resume`, `stop`, `doctor`, `watchdog`), also symlinked at `~/.claude/.resource-guard/bin/resource-guard` so it runs from PowerShell via `wsl.exe -e <absolute link path>` when the WSL shell hangs (`-e` starts no shell, so `~` is not expanded; `doctor` prints the exact line). It never runs `wsl.exe --shutdown`.
+- Linux and WSL2 only. On WSL1, macOS and native Windows the hooks do nothing.
+
+**Tests:** `python3 -m unittest discover -s plugin-resource-guard/tests`
 
 ---
 
@@ -437,6 +460,7 @@ plugin-opencode-migrate/          # opencode-migrate plugin — Claude Code -> o
 plugin-mempalace-docker/          # mempalace-docker plugin — Dockerized MemPalace MCP + CLI + save hooks, GPU-aware
 plugin-ruby-lsp/                  # ruby-lsp plugin — ruby-lsp/RuboCop diagnostics + advisory Reek hook, Docker-first
 plugin-markdown-lsp/              # markdown-lsp plugin — rumdl LSP diagnostics, skill-derived fallback config, Docker-first
+plugin-resource-guard/            # resource-guard plugin — load gate, freeze/resume of background sessions and containers, WSL-aware
 ```
 
 Each plugin owns its agents and skills directly — no shared root directories, no symlinks. To update an agent or skill, edit it in the plugin directory where it belongs (`plugin-dev/agents/`, `plugin-qa/skills/`, etc.).
