@@ -1,0 +1,101 @@
+{
+  "enabled": true,
+  "freeze_mode": "observe",
+  "gate": true,
+  "max_sessions": 3,
+  "foreground_grace_seconds": 60,
+  "gate_wait_seconds": 20,
+  "gate_poll_seconds": 2,
+  "deny_burst": {
+    "count": 3,
+    "window_seconds": 300
+  },
+  "advisory_interval_seconds": 600,
+  "status_max_age_seconds": 15,
+  "interval_seconds": {
+    "ok": 5,
+    "elevated": 2
+  },
+  "critical_samples": 2,
+  "calm_samples": 3,
+  "freeze_settle_seconds": 10,
+  "resume_settle_seconds": 20,
+  "resume_backoff_seconds": [60, 120, 240],
+  "idle_exit_seconds": 120,
+  "host_check": {
+    "enabled": true,
+    "interval_seconds": 60,
+    "elevated_interval_seconds": 20,
+    "timeout_seconds": 10
+  },
+  "thresholds": {
+    "elevated": {
+      "mem_available_pct_below": 20,
+      "swap_free_pct_below": 40,
+      "psi_memory_some_at_least": 10,
+      "psi_io_full_at_least": 20,
+      "psi_cpu_some_at_least": 80,
+      "host_available_pct_below": 15,
+      "host_commit_free_pct_below": 10
+    },
+    "critical": {
+      "mem_available_pct_below": 10,
+      "swap_free_pct_below": 20,
+      "psi_memory_full_at_least": 10,
+      "host_available_pct_below": 7,
+      "host_commit_free_pct_below": 5
+    },
+    "hard": {
+      "mem_available_pct_below": 5,
+      "swap_free_pct_below": 10,
+      "psi_memory_full_at_least": 30,
+      "host_available_pct_below": 4,
+      "host_commit_free_pct_below": 2
+    }
+  },
+  "wsl_thresholds": {
+    "elevated": {
+      "psi_io_full_at_least": 15
+    }
+  },
+  "heavy_patterns": [
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(?:\\S*/)?docker(?:-compose)?(?:\\s+-\\S+(?:\\s+[^-\\s]\\S*)?)*\\s+(?:compose(?:\\s+-\\S+(?:\\s+[^-\\s]\\S*)?)*\\s+)?(?:container\\s+|image\\s+)?(build|run|create|up|buildx)\\b",
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(?:\\S*/)?docker(?:-compose|\\s+compose)?\\s+exec\\b.*\\b(rspec|pytest|py\\.test|jest|vitest|mocha|phpunit|playwright|cypress|karma|tox|nox|unittest|rake\\s+(?:test|spec)|rails\\s+test)\\b",
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(?:(?:bundle\\s+exec|npx|bunx|pnpm\\s+(?:exec|dlx)|yarn|uv\\s+run|poetry\\s+run|pipenv\\s+run|python[\\d.]*\\s+-m)\\s+(?:-\\S+\\s+)*)?(?:\\S*/)?(rspec|pytest|py\\.test|jest|vitest|mocha|phpunit|playwright|cypress|karma|tox|nox|unittest)\\b",
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(?:bundle\\s+exec\\s+)?(?:\\S*/)?(rake|rails)\\s+(test|spec|assets:precompile)\\b",
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(?:\\S*/)?bundle\\s+install\\b",
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(?:\\S*/)?(npm|pnpm|yarn|bun)\\s+(install|ci|test|run\\s+(test|build|e2e))\\b",
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(npx|bunx)\\s+(?:-\\S+\\s+)*(tsc|webpack|next\\s+build)\\b",
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(?:\\S*/)?(mvn|mvnw|gradle|gradlew|cargo|go)\\s+(?:-\\S+\\s+)*(build|test|install|package|verify)\\b",
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(?:(?:\\S*/)?(make|ninja)\\b|cmake\\s+--build\\b)",
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(?:\\S*/)?(webpack|tsc|vite\\s+build|next\\s+build)\\b",
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(?:(?:\\S*/)?python[\\d.]*\\s+-m\\s+|uv\\s+)?(?:\\S*/)?pip[\\d.]*\\s+install\\b"
+  ],
+  "relief_patterns": [
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(?:\\S*/)?docker(?:\\s+-\\S+(?:\\s+[^-\\s]\\S*)?)*\\s+(?:container\\s+)?(stop|kill|rm|pause)\\b",
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(?:\\S*/)?docker(?:-compose|\\s+compose)(?:\\s+-\\S+(?:\\s+[^-\\s]\\S*)?)*\\s+(stop|down|kill|rm|pause)\\b",
+    "^\\s*(sudo\\s+)?(kill|pkill|killall)\\b",
+    "^\\s*(?:(?:sudo|env|time|nice|nohup|exec|command|timeout\\s+\\S+)\\s+(?:-\\S+\\s+)*|[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+)*(?:python[\\d.]*\\s+)?(?:\\S*/)?resource[-_]guard(?:\\.py)?[\"\\']?\\s+(status|sessions|freeze|resume|stop|doctor|watchdog)\\b"
+  ],
+  "never_freeze_commands": [
+    "git",
+    "git-*",
+    "ssh*",
+    "scp",
+    "sftp",
+    "rsync",
+    "gpg*",
+    "keyboxd",
+    "dirmngr",
+    "scdaemon",
+    "pinentry*"
+  ],
+  "never_pause": [
+    "*mysql*",
+    "*mariadb*",
+    "*postgres*",
+    "*redis*",
+    "*mongo*"
+  ],
+  "target_pids": []
+}
