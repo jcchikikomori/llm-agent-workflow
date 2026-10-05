@@ -74,7 +74,7 @@ class FakeProc:
         # majflt cmajflt utime stime cutime cstime prio nice threads itreal start vsize rss
         rest = [state, str(ppid), "0", str(sid)] + ["0"] * 15 + [str(start), "0", str(rss_pages)] + ["0"] * 5
         (pid_dir / "stat").write_text(f"{pid} ({comm}) " + " ".join(rest) + "\n")
-        (pid_dir / "status").write_text(f"Name:\t{comm}\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n")
+        (pid_dir / "status").write_text(f"Name:\t{comm}\nPPid:\t{ppid}\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n")
         (pid_dir / "cmdline").write_bytes(b"\0".join(arg.encode() for arg in cmdline) + b"\0")
         env = environ or {}
         (pid_dir / "environ").write_bytes(b"".join(f"{k}={v}".encode() + b"\0" for k, v in env.items()))
@@ -153,7 +153,7 @@ class SandboxTestCase(unittest.TestCase):
                 "status": status, "cwd": cwd, "updatedAt": updated}
         (self.claude_home / "sessions" / f"{pid}.json").write_text(json.dumps(data))
 
-    def claude(self, pid, start=500, ppid=1):
+    def claude(self, pid, start=500, ppid=1, environ=None):
         """A live Claude Code session process in the fake /proc."""
         return self.proc.add(pid, ppid=ppid, comm="claude", start=start, cmdline=("claude",),
-                             exe="/opt/claude/versions/9.9.9", rss_pages=1000)
+                             exe="/opt/claude/versions/9.9.9", rss_pages=1000, environ=environ)

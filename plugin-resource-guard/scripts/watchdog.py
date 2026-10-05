@@ -137,8 +137,9 @@ class Watchdog:
         for session in cache["sessions"]:
             if session.key in protected or session.key in frozen or (allowed and session.pid not in allowed):
                 continue
-            owned = [c for c in cache["containers"] if cache["attrs"].get(c.id) and
-                     cache["attrs"][c.id].owner == session.key]
+            # Servers never pause: a session that only has those has
+            # nothing to freeze, so it isn't worth an escalation step.
+            owned = docker_mod.owned_by(cache["containers"], cache["attrs"], session.key)
             if not cache["work"].get(session.key) and not owned:
                 continue
             growth = cache["rss"].get(session.key, 0) - self.prev_rss.get(session.key, 0)
@@ -315,8 +316,7 @@ class Watchdog:
         rows = []
         for session in cache["sessions"]:
             procs = cache["procs"]
-            owned = [c for c in cache["containers"] if cache["attrs"].get(c.id) and
-                     cache["attrs"][c.id].owner == session.key]
+            owned = docker_mod.owned_by(cache["containers"], cache["attrs"], session.key, role=None)
             rows.append({
                 "key": session.key,
                 "pid": session.pid,
@@ -329,8 +329,8 @@ class Watchdog:
                 "tree_rss_kb": procs_mod.tree_rss_kb(procs, session.pid) if procs else 0,
                 "work_rss_kb": cache["rss"].get(session.key, 0),
                 "work_procs": len(cache["work"].get(session.key, [])),
-                "containers": [{"name": c.name, "state": c.state, "mem_bytes": docker_mod.cgroup_mem(c.id)}
-                               for c in owned],
+                "containers": [{"name": c.name, "state": c.state, "mem_bytes": docker_mod.cgroup_mem(c.id),
+                                "role": cache["attrs"][c.id].role} for c in owned],
             })
         return {
             "ts": now,

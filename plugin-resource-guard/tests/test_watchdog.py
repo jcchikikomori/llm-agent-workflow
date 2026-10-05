@@ -156,7 +156,22 @@ class EscalationTests(WatchdogTestCase):
             status = self.ticks(dog, 1)
             self.assertEqual([i["State"] for i in items], ["paused", "running"])
         row = next(r for r in status["sessions"] if r["key"] == BG1)
-        self.assertEqual(row["containers"], [{"name": "suite", "state": "running", "mem_bytes": None}])
+        self.assertEqual(row["containers"], [{"name": "suite", "state": "running", "mem_bytes": None, "role": "work"}])
+
+    def test_should_leave_a_session_with_only_servers_alone(self):
+        for pid in (201, 301):
+            self.proc.remove(pid)
+        labels = {"dev.claude.pid": "200", "dev.claude.pid_start": "600", "dev.claude.role": "server"}
+        items = [container("c1", "sonarqube", labels=labels)]
+        with FakeEngine(self.tmp / "d.sock", items) as engine:
+            self.engine = engine
+            dog = self.make()
+            self.sampler.push((3.0, 0.0))
+            status = self.ticks(dog, 1)
+            self.assertEqual(items[0]["State"], "running")
+        self.assertEqual(actions.frozen_keys(), set())
+        row = next(r for r in status["sessions"] if r["key"] == BG1)
+        self.assertEqual(row["containers"][0]["role"], "server")
 
 
 class SafetyTests(WatchdogTestCase):

@@ -63,7 +63,7 @@ Platform support: macOS, Linux, WSL, native Windows.
 | `mempalace-docker` | behavior-control | Runs MemPalace through Docker with GPU-aware runtime selection |
 | `ruby-lsp` | quality-enforcement | ruby-lsp + RuboCop diagnostics after every Ruby edit, advisory Reek smells, Docker-first |
 | `markdown-lsp` | quality-enforcement | rumdl LSP diagnostics after every Markdown edit, skill-derived fallback config, Docker-first |
-| `resource-guard` | behavior-control | Gates heavy work under memory pressure, freezes and resumes background sessions' work and containers, WSL-aware |
+| `resource-guard` | behavior-control | Gates heavy work under memory pressure, freezes and resumes background sessions' work and containers, caps each session's docker MCP/LSP containers, WSL-aware |
 | `wandavision` | quality-enforcement | Deterministic image analysis via `mcp-vision` |
 | `metronome` | behavior-control | Keeps workflows procedural and step-driven |
 | `discover` | product-quality | Turns ideas into evidence-backed PRDs |

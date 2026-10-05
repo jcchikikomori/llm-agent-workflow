@@ -108,6 +108,10 @@ def read_json(path: Path, default: Any = None) -> Any:
 
 
 def atomic_write_json(path: Path, data: Any) -> None:
+    atomic_write_text(path, json.dumps(data, indent=1, sort_keys=True))
+
+
+def atomic_write_text(path: Path, text: str) -> None:
     """Write via a temp file in the same directory and rename over the target,
     so a reader never sees a half-written file. The temp file is created
     fresh (O_EXCL, O_NOFOLLOW), never opened through a planted symlink."""
@@ -117,7 +121,7 @@ def atomic_write_json(path: Path, data: Any) -> None:
     fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=1, sort_keys=True)
+            fh.write(text)
         os.replace(tmp, path)
     except BaseException:
         with contextlib.suppress(OSError):

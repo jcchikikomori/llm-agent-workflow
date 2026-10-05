@@ -1,6 +1,6 @@
 ---
 name: resource-guard
-description: This skill should be used when a resource-guard hook denies, holds back or asks to confirm a tool call, stops a turn after repeated held-back calls, says this session's Bash work or containers were frozen or resumed, or reports elevated, critical or hard load; also when the user asks "why is my machine slow", "which session is eating memory", "WSL froze", "should I run wsl --shutdown", "freeze/resume a session", "stop that test container" or "is resource-guard running".
+description: This skill should be used when a resource-guard hook denies, holds back or asks to confirm a tool call, stops a turn after repeated held-back calls, says this session's Bash work or containers were frozen or resumed, or reports elevated, critical or hard load; also when the user asks "why is my machine slow", "which session is eating memory", "WSL froze", "should I run wsl --shutdown", "freeze/resume a session", "stop that test container", "is resource-guard running", or a docker MCP server keeps dying or was OOM-killed.
 ---
 
 # resource-guard
@@ -48,6 +48,14 @@ continue with light work or ask what to do instead.
 Prefer the lighter option: one subagent instead of several, a single spec file instead of the whole suite, reuse a
 running container instead of starting a new one. Ask before starting anything heavy that the user did not request.
 
+## When a docker MCP/LSP server dies
+
+A session's docker MCP/LSP servers run under a `server_caps` memory cap when the resource-guard shims are on Claude
+Code's `PATH`. One that outgrows its cap is OOM-killed: `/mcp` lists it as failed, and
+`docker inspect -f '{{.State.OOMKilled}}' <container>` prints `true` while the container still exists. Tell the user
+which cap applied (`~/.claude/.resource-guard/shim.conf`), and that a higher cap in `~/.claude/resource-guard.json`
+takes effect for servers started after the next session starts.
+
 ## The CLI
 
 `~/.claude/.resource-guard/bin/resource-guard <command>` works from any terminal. From Windows it needs the
@@ -58,11 +66,11 @@ absolute path (`wsl.exe -d <distro> -e /home/<user>/.claude/.resource-guard/bin/
 | Command | Effect |
 | --- | --- |
 | `status` | level, metrics, host memory on WSL, watchdog health, frozen sessions |
-| `sessions [--json]` | per session: baseline vs freezable work, owned containers, flags |
+| `sessions [--json]` | per session: baseline (its tree plus its server containers) vs freezable work, containers, flags |
 | `freeze <pid>` / `freeze --others` | freeze one session's work / every session except the foreground (never this session itself without `--include-self`) |
 | `resume <pid>` / `resume --all` | undo a freeze |
 | `stop <pid>` | show what it would terminate; add `--yes` (only after the user agrees) to terminate that session's Bash work and stop its containers |
-| `doctor` | platform, PSI, docker, shim bypass, `.wslconfig` advice |
+| `doctor` | platform, PSI, docker, shim bypass, shims on Claude Code's `PATH`, `.wslconfig` advice |
 | `watchdog start\|stop\|status` | manage the watchdog |
 
 ## Never
@@ -72,7 +80,7 @@ absolute path (`wsl.exe -d <distro> -e /home/<user>/.claude/.resource-guard/bin/
   `freeze` or `watchdog stop`, unless the user asks.
 - Kill, remove or restart a `Paused` container or a frozen process to get unstuck.
 - Run `wsl.exe --shutdown`: it stops every distro and every session. Only mention it, with that warning.
-- Edit `~/.claude/resource-guard.json` (`enabled`, `gate`, `freeze_mode`, thresholds) or set
+- Edit `~/.claude/resource-guard.json` (`enabled`, `gate`, `freeze_mode`, thresholds, `server_caps`) or set
   `RESOURCE_GUARD_DISABLE=1` unless the user asks.
 - Bypass the docker shim (`command docker`, absolute paths to the real binary): unlabeled containers can't be
   paused for this session.

@@ -11,6 +11,11 @@ Attribution, strongest first:
 2. a live `docker run --name X` client in the session's Bash work owns X;
 3. a live `docker exec X` client in a session's work references X.
 Anything else is unattributed and is never paused.
+
+A container labeled `dev.claude.role=server` is one of the session's own
+MCP/LSP servers (the shim on Claude Code's PATH labels them). It is owned,
+so it shows in the session's footprint, but it is never paused or stopped:
+the session would lose that tool mid-call.
 """
 
 from __future__ import annotations
@@ -62,6 +67,7 @@ class Attribution:
     refs: set = field(default_factory=set)
     client: tuple | None = None
     via: str = "none"
+    role: str = "work"
 
 
 def socket_path(env: dict | None = None, home: Path | None = None) -> tuple:
@@ -334,7 +340,8 @@ def attribute(containers: list, sessions: list, procs: dict, work: dict) -> dict
     for c in containers:
         owner = _label_owner(c.labels, by_pid)
         out[c.id] = Attribution(owner=owner, refs={owner} if owner else set(),
-                                client=_label_client(c.labels), via="label" if owner else "none")
+                                client=_label_client(c.labels), via="label" if owner else "none",
+                                role="server" if c.labels.get("dev.claude.role") == "server" else "work")
     for key, pids in work.items():
         for pid in pids:
             proc = procs.get(pid)
@@ -354,12 +361,25 @@ def attribute(containers: list, sessions: list, procs: dict, work: dict) -> dict
     return out
 
 
+def owned_by(containers: list, attrs: dict, key: str, role: str | None = "work") -> list:
+    """Containers attributed to session `key`: its work ("work"), its
+    servers ("server"), or both (None)."""
+    out = []
+    for c in containers:
+        attr = attrs.get(c.id)
+        if attr and attr.owner == key and (role is None or attr.role == role):
+            out.append(c)
+    return out
+
+
 def pausable(container: Container, attr: Attribution, targets: set, cfg: dict) -> tuple:
     """(bool, reason). Only a running container owned by a freeze target, with
     no reference from a session that stays running, outside shared compose
     services and the never_pause list."""
     if container.state != "running":
         return False, container.state or "not running"
+    if attr.role == "server":
+        return False, "session server"
     if not attr.owner:
         return False, "unattributed"
     if attr.owner not in targets or not attr.refs <= targets:

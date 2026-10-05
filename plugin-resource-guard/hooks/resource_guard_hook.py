@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import secrets
 import shlex
 import sys
 import time
@@ -99,9 +101,15 @@ def _footprints(cfg: dict) -> str:
     status = common.read_json(pressure.status_path(), {}) or {}
     if not isinstance(status, dict) or time.time() - status.get("ts", 0) > 4 * cfg.get("status_max_age_seconds", 15):
         return ""
-    rows = sorted(status.get("sessions") or [], key=lambda r: r.get("tree_rss_kb", 0), reverse=True)
-    parts = [f"{os.path.basename(str(r.get('cwd', '')).rstrip('/')) or r.get('key')} {_fmt_kb(r.get('tree_rss_kb', 0))}"
-             for r in rows[:5] if isinstance(r, dict)]
+    def cost_kb(row: dict) -> float:
+        # A session's own MCP/LSP server containers are part of what it costs.
+        servers = sum((c.get("mem_bytes") or 0) for c in row.get("containers") or []
+                      if isinstance(c, dict) and c.get("role") == "server")
+        return row.get("tree_rss_kb", 0) + servers / 1024
+
+    rows = sorted((r for r in status.get("sessions") or [] if isinstance(r, dict)), key=cost_kb, reverse=True)
+    parts = [f"{os.path.basename(str(r.get('cwd', '')).rstrip('/')) or r.get('key')} {_fmt_kb(cost_kb(r))}"
+             for r in rows[:5]]
     return ", ".join(parts)
 
 
@@ -141,20 +149,86 @@ def _write_shim_path(env_file: str) -> None:
         pass
 
 
-def _link_cli() -> None:
-    import rg_common as common
-
-    link = common.state_dir() / "bin" / "resource-guard"
-    target = common.plugin_root() / "scripts" / "resource_guard.py"
+def _relink(link: Path, target: Path) -> None:
+    """Point the stable `link` at this plugin version's `target`. The rename
+    swaps it in one step, so nobody resolving it ever finds it missing."""
     try:
         link.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         if link.is_symlink() and os.readlink(link) == str(target):
             return
-        tmp = link.with_name(".resource-guard.tmp")
-        if tmp.is_symlink() or tmp.exists():
-            tmp.unlink()
+        # A name of its own: sessions starting together must not unlink
+        # each other's half-made link.
+        tmp = link.with_name(f".{link.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
         os.symlink(target, tmp)
-        os.replace(tmp, link)
+        try:
+            os.replace(tmp, link)
+        except OSError:
+            os.unlink(tmp)
+            raise
+    except OSError:
+        pass
+
+
+def _link_cli() -> None:
+    import rg_common as common
+
+    _relink(common.state_dir() / "bin" / "resource-guard", common.plugin_root() / "scripts" / "resource_guard.py")
+
+
+def _link_shims() -> None:
+    """~/.claude/.resource-guard/shims is what goes on Claude Code's own PATH
+    (the plugin cache path changes with every version)."""
+    import rg_common as common
+
+    _relink(common.state_dir() / "shims", common.plugin_root() / "shims")
+
+
+# docker's own floor is 6 MiB: a smaller --memory makes `docker run` fail,
+# and the MCP server with it.
+CAP_UNITS = {"": 1, "b": 1, "k": 1024, "m": 1024 ** 2, "g": 1024 ** 3}
+MIN_CAP = 6 * 1024 ** 2
+
+
+def _cap(value) -> str | None:
+    text = str(value).strip() if isinstance(value, (str, int)) and not isinstance(value, bool) else ""
+    if text == "none":
+        return text
+    # ASCII digits and no leading zero: the shim's own check, which would
+    # otherwise reject the value and leave that image uncapped.
+    match = re.fullmatch(r"([1-9][0-9]*)([bkmgBKMG]?)", text)
+    if not match or int(match.group(1)) * CAP_UNITS[match.group(2).lower()] < MIN_CAP:
+        return None
+    return text
+
+
+def shim_conf(cfg: dict) -> str:
+    """shim.conf from cfg["server_caps"]. The shim takes the first image glob
+    that matches, so the most literal one goes first. Values that docker
+    would refuse are dropped here, never handed to `docker run`."""
+    lines = ["# resource-guard: memory caps for session MCP/LSP containers.",
+             "# Written at SessionStart from server_caps; edit ~/.claude/resource-guard.json instead."]
+    caps = cfg.get("server_caps")
+    if isinstance(caps, dict):
+        images = caps.get("images") if isinstance(caps.get("images"), dict) else {}
+        for pattern in sorted(images, key=lambda p: (-len(p.replace("*", "").replace("?", "")), p)):
+            value = _cap(images[pattern])
+            if value and pattern and pattern.isascii() and pattern.isprintable() and " " not in pattern:
+                lines.append(f"image {pattern} {value}")
+        default = _cap(caps.get("default", ""))
+        if default:
+            lines.append(f"default {default}")
+    return "\n".join(lines) + "\n"
+
+
+def _write_shim_conf(cfg: dict) -> None:
+    import rg_common as common
+
+    path = common.state_dir() / "shim.conf"
+    text = shim_conf(cfg)
+    try:
+        if path.is_file() and path.read_text() == text:
+            return
+        common.atomic_write_text(path, text)
     except OSError:
         pass
 
@@ -167,6 +241,8 @@ def on_session_start(data: dict, cfg: dict) -> dict | None:
     if os.environ.get("CLAUDE_ENV_FILE"):
         _write_shim_path(os.environ["CLAUDE_ENV_FILE"])
     _link_cli()
+    _link_shims()
+    _write_shim_conf(cfg)
     state = _ensure_watchdog()
 
     if data.get("source") == "compact":

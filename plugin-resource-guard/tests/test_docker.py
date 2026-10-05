@@ -219,6 +219,20 @@ class AttributionTests(SandboxTestCase):
         self.assertEqual(docker.pausable(one_off, mine, {"100-500"}, self.cfg), (True, "ok"))
         self.assertEqual(docker.pausable(db, mine, {"100-500"}, self.cfg)[1], "never_pause *mysql*")
 
+    def test_should_own_but_never_pause_a_session_server(self):
+        labels = dict(LABELS, **{"dev.claude.role": "server"})
+        attrs = docker.attribute([self.c("a", "sq", labels), self.c("b", "run", LABELS)], [self.s1], {}, {})
+        self.assertEqual((attrs["a"].owner, attrs["a"].role, attrs["b"].role), ("100-500", "server", "work"))
+        self.assertEqual(docker.pausable(self.c("a", "sq", labels), attrs["a"], {"100-500"}, self.cfg),
+                         (False, "session server"))
+
+    def test_should_list_a_session_s_containers_by_role(self):
+        attrs = {"a": docker.Attribution(owner="100-500", role="server"), "b": docker.Attribution(owner="100-500"),
+                 "c": docker.Attribution(owner="200-600"), "d": docker.Attribution()}
+        containers = [self.c(cid, cid) for cid in "abcde"]
+        names = lambda role: [c.name for c in docker.owned_by(containers, attrs, "100-500", role)]
+        self.assertEqual((names("work"), names("server"), names(None)), (["b"], ["a"], ["a", "b"]))
+
 
 if __name__ == "__main__":
     unittest.main()

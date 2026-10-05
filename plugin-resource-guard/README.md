@@ -37,6 +37,13 @@ turn freezing on:
 Put that in `~/.claude/resource-guard.json`. Check `events.jsonl` (below) for a day first, to see whether the
 thresholds suit your machine.
 
+**To cap MCP/LSP containers**, add one line to your shell rc file and restart Claude Code (see
+[Session servers](#session-servers-mcplsp-containers)). `resource-guard doctor` tells you when it's missing:
+
+```bash
+export PATH="$HOME/.claude/.resource-guard/shims:$PATH"
+```
+
 ## How it works
 
 ### Levels
@@ -103,7 +110,8 @@ The watchdog never freezes the claude process or its MCP/LSP servers. It freezes
     by exact name only: a short name could otherwise prefix-match somebody else's container ID.
   - Never paused: containers another session references (`docker exec`, by name or a 12+ character ID prefix)
     unless that session is frozen too, compose services (`oneoff=False`: shared databases and caches),
-    `never_pause` images (mysql, postgres, redis, mongo by default), and anything unlabeled.
+    `never_pause` images (mysql, postgres, redis, mongo by default), session servers (`dev.claude.role=server`,
+    next section), and anything unlabeled.
 
 Order:
 
@@ -127,6 +135,49 @@ is retried 5 times, then reported (`could not unpause ...`) so one stuck session
 tips the machine over again within 5 minutes of its resume gets backed off: 60, then 120, then 240 s.
 
 A prompt in a frozen session resumes it right away.
+
+### Session servers (MCP/LSP containers)
+
+Every session runs its own copy of every docker-based MCP and LSP server. On this machine, four sessions held four
+sonarqube JVMs (1.7 GB) and four mempalace containers (1.1 GB), and none of them had a memory limit. A JVM started
+without `-Xmx` sizes its heap to a quarter of the RAM it sees, so each sonarqube copy could grow to about 4 GB.
+
+Claude Code starts those containers itself, not through the Bash tool, so the Bash-tool shim never sees them. The
+`export PATH` line from [Install](#install) puts a stable link to the same shim on Claude Code's own `PATH`. After
+that, a `docker run` is treated as a **session server** when its nearest `claude` ancestor is at most 4 levels up
+(wrapper scripts like `run-mempalace.sh` count) and nothing on the way carries `CLAUDE_PID`. A session server:
+
+- gets `dev.claude.role=server` plus the usual session labels, so `sessions` lists it under its session and counts it
+  in that session's baseline;
+- is never paused, and `stop` leaves it running: the session would lose that tool mid-call;
+- gets `--memory <cap>` from `server_caps`, inserted just before the image (and before a `--` that precedes it),
+  unless the server's own config already sets a limit: `-m`/`--memory` (bundled ones like `-dm 512m` too),
+  `--memory-reservation` or `--memory-swap`. A hard limit below either of the last two would make the daemon refuse
+  the container.
+
+Hooks get the same treatment. They carry `CLAUDE_PID` plus `CLAUDE_PLUGIN_ROOT` or `CLAUDE_PROJECT_DIR`, so a
+container a hook runs (mempalace-docker's save hooks) is labeled and capped as a server, and a paused one can't
+hang the hook. That includes the `default` cap for a hook container whose image no glob names; give its image
+`none` to opt it out.
+
+Labels are bookkeeping hints, not a trust boundary: any process of yours can set them, as can anyone who can reach
+the docker socket. A forged `role=server` label can only keep a container out of a freeze, which an unlabeled one
+already is.
+
+**The cap is set at creation, on purpose.** `docker update --memory` could add one later, but a JVM reads its limit
+only at startup. A cap added afterwards doesn't shrink the heap; it gets the JVM OOM-killed. Under the 2 GB default,
+the sonarqube JVM sizes its heap to 512 MB. Each copy measured about 415 MB in total here.
+
+| Image glob | Cap | Measured here, per copy |
+| --- | --- | --- |
+| `*mempalace*` | `3g` | up to 1.0 GB |
+| `ghcr.io/rvben/rumdl*` | `512m` | about 21 MB |
+| anything else (`default`) | `2g` | sonarqube about 415 MB |
+
+SessionStart writes the caps to `~/.claude/.resource-guard/shim.conf`, because the shim is POSIX `sh` and reads no
+JSON. Edit `server_caps` in `resource-guard.json`, not that file. The most literal glob wins, `none` turns a cap off,
+and a value below docker's 6 MB floor is dropped rather than handed to `docker run`. New caps apply to servers started
+after the next SessionStart.
 
 ### Watchdog lifecycle
 
@@ -160,11 +211,11 @@ A prompt in a frozen session resumes it right away.
 
 ```bash
 ~/.claude/.resource-guard/bin/resource-guard status          # level, metrics, host memory, watchdog, frozen
-~/.claude/.resource-guard/bin/resource-guard sessions        # per session: baseline vs freezable work, containers
+~/.claude/.resource-guard/bin/resource-guard sessions        # per session: baseline (tree + servers) vs work
 ~/.claude/.resource-guard/bin/resource-guard freeze <pid>    # or --others: everyone except the foreground
 ~/.claude/.resource-guard/bin/resource-guard resume <pid>    # or --all
 ~/.claude/.resource-guard/bin/resource-guard stop <pid> --yes
-~/.claude/.resource-guard/bin/resource-guard doctor          # on WSL, also prints the Windows escape hatch line
+~/.claude/.resource-guard/bin/resource-guard doctor          # shims on PATH? on WSL, the Windows escape hatch
 ~/.claude/.resource-guard/bin/resource-guard watchdog start|stop|status
 ```
 
@@ -198,6 +249,7 @@ wsl.exe -d Ubuntu-22.04 -e /home/<you>/.claude/.resource-guard/bin/resource-guar
 | `max_sessions` | `3` | SessionStart warns at this many live sessions |
 | `heavy_patterns`, `relief_patterns` | builds, tests, containers / stop, kill | regexes per command segment |
 | `never_pause` | databases and caches | container name/image globs never paused |
+| `server_caps` | `default` `2g`, mempalace `3g`, rumdl `512m` | `--memory` for session-server containers, by image glob |
 | `never_freeze_commands` | `git*`, `ssh*`, `gpg*`, `rsync`, `pinentry*`, ... | process-name globs never frozen |
 | `target_pids` | `[]` | restrict freezing to these session pids (smoke tests) |
 
@@ -206,6 +258,7 @@ wsl.exe -d Ubuntu-22.04 -e /home/<you>/.claude/.resource-guard/bin/resource-guar
 State lives in `~/.claude/.resource-guard/` (mode 0700). Overview:
 
 - `status.json` is the watchdog's last tick.
+- `shims` links to this version's docker shim; `shim.conf` holds the server caps.
 - `frozen.json` is what it froze.
 - `events.jsonl` is the freeze/resume history. It never holds prompt or command text.
 - `watchdog.log` and `hook-errors.log` are for debugging.
@@ -214,8 +267,15 @@ State lives in `~/.claude/.resource-guard/` (mode 0700). Overview:
 
 - **Freezing frees no memory.** It stops growth and contention, and frozen pages can be swapped out, but only
   stopping work gives memory back. `sessions` shows what `stop` would reclaim.
-- **The shim only sees the Bash tool.** Containers started by MCP or LSP servers, or with the real docker binary
-  addressed directly, are unlabeled and never paused. `doctor` flags a running `docker run` that has no labels.
+- **The shim only sees `docker` looked up on `PATH`.** Without the `export PATH` line, MCP/LSP containers stay
+  unlabeled and uncapped. A config, alias or script that runs `/usr/bin/docker` directly bypasses the shim either way;
+  `doctor` flags Bash work that runs `docker run` without labels.
+- **Only docker-based servers get a cap.** A server that runs natively (`npx`, `uvx`, `node`) is a plain child of
+  `claude`, and capping it needs a cgroup per process, which WSL only has with `[boot] systemd=true`. A `compose run`
+  server (ruby-lsp) gets labels but no cap: `compose run` has no `--memory` flag, so set `mem_limit` in the compose
+  file instead.
+- **A server that outgrows its cap is OOM-killed**, and its tools fail in that session (`/mcp` shows it as failed).
+  Raise its cap in `server_caps`, start a new session (or wait for one to start), then reconnect it from `/mcp`.
 - **A frozen foreground-style Bash command** keeps the session's turn waiting until Claude Code's command timeout,
   which moves it to the background. The PostToolUse note tells Claude not to retry it.
 - **`ask` in `-p` mode** behaves like defer, so headless sessions at critical are not prompted.
@@ -245,6 +305,17 @@ uvx coverage run --branch --source plugin-resource-guard/hooks,plugin-resource-g
 ```
 
 ## Changelog
+
+### 0.2.0
+
+- **Session servers.** A stable shim link, `~/.claude/.resource-guard/shims`, for Claude Code's own `PATH`. It
+  labels each session's docker-based MCP/LSP servers, and the containers hooks run, as `dev.claude.role=server`.
+- **Memory caps.** Those containers get `--memory` from the new `server_caps` setting, set at creation so a JVM sizes
+  its heap to it. A cap the server's own config sets wins. SessionStart writes the caps to `shim.conf`.
+- **Never paused or stopped.** Server containers count in their session's baseline (`sessions`, the SessionStart
+  footprint), but are never paused, and `stop` leaves them running. A session that only has servers is no longer an
+  escalation candidate.
+- **doctor** checks every live session's `PATH` for the shims and prints the shell rc line when one is missing.
 
 ### 0.1.0
 

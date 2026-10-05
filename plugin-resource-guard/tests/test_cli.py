@@ -102,6 +102,22 @@ class SessionsTests(CliTestCase):
         self.assertEqual(data["unattributed_containers"], ["mcp"])
         self.assertFalse(data["sessions"][0]["foreground"])
 
+    def test_should_count_session_servers_in_the_baseline(self):
+        cgroup = self.sys_root / "fs/cgroup/docker/c1"
+        cgroup.mkdir(parents=True)
+        (cgroup / "memory.current").write_text(str(300 * 1024 * 1024))
+        server = dict(LABELS, **{"dev.claude.role": "server"})
+        with FakeEngine(self.tmp / "d.sock", [container("c1", "sonarqube", labels=server)]) as e:
+            os.environ["DOCKER_HOST"] = f"unix://{e.socket_path}"
+            _, raw, _ = self.run_cli("sessions", "--json")
+            _, out, _ = self.run_cli("sessions")
+        row = json.loads(raw)["sessions"][0]
+        self.assertEqual((row["containers"], row["server_kb"]), ([], 300 * 1024))
+        self.assertEqual(row["servers"], [{"name": "sonarqube", "state": "running", "mem_kb": 300 * 1024}])
+        self.assertEqual(row["baseline_kb"], row["tree_kb"] - row["work_kb"] + 300 * 1024)
+        self.assertIn("sonarqube(300.0 MB, server)", out)
+        self.assertIn("unattributed containers: 0", out)
+
     def test_should_report_docker_errors(self):
         with FakeEngine(self.tmp / "d.sock", []) as e:
             e.status_override[("GET", "/containers/json")] = 500
@@ -183,6 +199,15 @@ class StopTests(CliTestCase):
         self.assertEqual(self.logged_signals(), [(301, 15), (301, 18), (301, 9)])
         self.assertIn("containers: suite", out)
 
+    def test_should_keep_the_session_s_servers_running_on_stop(self):
+        items = [container("c1", "sonarqube", labels=dict(LABELS, **{"dev.claude.role": "server"}))]
+        with FakeEngine(self.tmp / "d.sock", items) as e:
+            os.environ["DOCKER_HOST"] = f"unix://{e.socket_path}"
+            code, out, _ = self.run_cli("stop", "100", "--yes")
+            self.assertEqual(items[0]["State"], "running")
+        self.assertEqual(code, 0)
+        self.assertIn("containers: none", out)
+
 
 class DoctorTests(CliTestCase):
     def test_should_pass_on_plain_linux(self):
@@ -199,6 +224,47 @@ class DoctorTests(CliTestCase):
         self.assertEqual(code, 1)
         self.assertIn("[fail] WSL1", out)
         self.assertIn("no /proc/pressure", out)
+
+    def shim_paths(self, *paths):
+        for pid, start, path in zip((100, 200), (500, 600), paths):
+            self.claude(pid, start=start, environ=None if path is None else {"PATH": path})
+
+    def test_should_ask_for_the_shims_on_claude_s_own_path(self):
+        self.shim_paths("/usr/bin:/mnt/c/Windows", "/usr/bin")
+        with mock.patch.dict(os.environ, {"SHELL": "/usr/bin/zsh", "HOME": str(self.tmp)}):
+            _, out, _ = self.run_cli("doctor")
+        self.assertIn("[warn] 2 of 2 sessions start MCP/LSP servers without the shims", out)
+        shims = str(common.state_dir() / "shims")
+        self.assertIn(f'add `export PATH="$HOME{shims[len(str(self.tmp)):]}:$PATH"` to ~/.zshrc, then restart Claude Code',
+                      out)
+
+    def test_should_accept_the_stable_link_or_any_shim_directory(self):
+        marked = self.tmp / "elsewhere"
+        marked.mkdir()
+        (marked / ".resource-guard-shim").write_text("")
+        os.symlink(common.plugin_root() / "shims", common.state_dir() / "shims")
+        self.shim_paths(f"{common.state_dir() / 'shims'}:/usr/bin", f"relative:{marked}:/usr/bin")
+        _, out, _ = self.run_cli("doctor")
+        self.assertIn("[ ok ] session MCP/LSP containers are labeled and capped: shims on PATH in all 2 sessions", out)
+        self.assertNotIn("doesn't lead to the shims", out)
+
+    def test_should_flag_a_dangling_shims_link(self):
+        os.symlink(self.tmp / "removed-version" / "shims", common.state_dir() / "shims")
+        self.shim_paths(f"{common.state_dir() / 'shims'}:/usr/bin", f"{common.state_dir() / 'shims'}")
+        _, out, _ = self.run_cli("doctor")
+        self.assertIn(f"[warn] {common.state_dir() / 'shims'} doesn't lead to the shims", out)
+        self.assertIn("[warn] 2 of 2 sessions start MCP/LSP servers without the shims", out)
+
+    def test_should_name_an_absolute_path_and_any_shell_rc(self):
+        self.shim_paths("/usr/bin", None)
+        with mock.patch.dict(os.environ, {"SHELL": "/usr/bin/fish", "HOME": "/nowhere"}):
+            _, out, _ = self.run_cli("doctor")
+        self.assertIn("[warn] 1 of 1 sessions", out)
+        self.assertIn(f'`export PATH="{common.state_dir() / "shims"}:$PATH"` to your shell rc file', out)
+
+    def test_should_skip_the_shims_check_without_a_readable_environ(self):
+        _, out, _ = self.run_cli("doctor")
+        self.assertNotIn("shims", out)
 
     def test_should_fail_off_linux(self):
         with mock.patch.object(cli.sys, "platform", "darwin"):

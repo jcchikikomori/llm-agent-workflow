@@ -90,6 +90,33 @@ class SessionStartTests(HookTestCase):
         link = common.state_dir() / "bin" / "resource-guard"
         self.assertEqual(os.readlink(link), str(common.plugin_root() / "scripts" / "resource_guard.py"))
 
+    def test_should_keep_a_stable_shims_link_for_claude_s_own_path(self):
+        link = common.state_dir() / "shims"
+        os.symlink(self.tmp / "old-version" / "shims", link)
+        self.run_hook({"hook_event_name": "SessionStart", "source": "startup"})
+        self.assertEqual(os.readlink(link), str(common.plugin_root() / "shims"))
+        self.assertTrue((link / ".resource-guard-shim").exists())
+
+    def test_should_leave_a_real_directory_where_the_link_goes(self):
+        (common.state_dir() / "shims").mkdir()
+        (common.state_dir() / "shims" / "mine").write_text("x")
+        self.run_hook({"hook_event_name": "SessionStart", "source": "startup"})
+        self.assertFalse((common.state_dir() / "shims").is_symlink())
+        self.assertEqual(os.listdir(common.state_dir() / "shims"), ["mine"])
+        self.assertEqual([p for p in os.listdir(common.state_dir()) if p.endswith(".tmp")], [])
+
+    def test_should_write_shim_conf_from_server_caps(self):
+        self.run_hook({"hook_event_name": "SessionStart", "source": "startup"})
+        lines = (common.state_dir() / "shim.conf").read_text().splitlines()
+        self.assertEqual([line for line in lines if not line.startswith("#")],
+                         ["image ghcr.io/rvben/rumdl* 512m", "image *mempalace* 3g", "default 2g"])
+
+    def test_should_not_rewrite_an_unchanged_shim_conf(self):
+        self.run_hook({"hook_event_name": "SessionStart", "source": "startup"})
+        with mock.patch.object(common, "atomic_write_text") as write:
+            self.run_hook({"hook_event_name": "SessionStart", "source": "resume"})
+        write.assert_not_called()
+
     def test_should_be_quiet_when_calm_and_uncrowded(self):
         self.proc.meminfo(total=100, available=60)
         self.assertIsNone(self.run_hook({"hook_event_name": "SessionStart"}))
@@ -116,6 +143,17 @@ class SessionStartTests(HookTestCase):
         out = self.run_hook({"hook_event_name": "SessionStart"})
         self.assertIn("sessions by memory: other 3.0 GB, mine 512 MB", out["systemMessage"])
 
+    def test_should_add_server_containers_to_a_session_s_footprint(self):
+        self.claude(300, start=700)
+        self.cc_session(300, 700)
+        servers = [{"name": "sq", "role": "server", "mem_bytes": 3 * 1024 ** 3},
+                   {"name": "suite", "role": "work", "mem_bytes": 9 * 1024 ** 3}, "junk"]
+        common.atomic_write_json(pressure.status_path(), {"ts": time.time(), "level": "ok", "reasons": [], "sessions": [
+            {"key": ME, "cwd": "/w/mine", "tree_rss_kb": 512 * 1024, "containers": servers},
+            {"key": OTHER, "cwd": "/w/other/", "tree_rss_kb": 3 * 1024 * 1024}, "junk"]})
+        out = self.run_hook({"hook_event_name": "SessionStart"})
+        self.assertIn("sessions by memory: mine 3.5 GB, other 3.0 GB", out["systemMessage"])
+
     def test_should_mention_hung_watchdog(self):
         with mock.patch.object(ctl, "ensure_watchdog", return_value="hung"):
             out = self.run_hook({"hook_event_name": "SessionStart"})
@@ -125,6 +163,31 @@ class SessionStartTests(HookTestCase):
         with mock.patch.object(ctl, "ensure_watchdog", return_value="gave_up"):
             out = self.run_hook({"hook_event_name": "SessionStart"})
         self.assertIn("watchdog keeps crashing", out["systemMessage"])
+
+
+class ShimConfTests(unittest.TestCase):
+    def conf(self, caps):
+        return [line for line in hook.shim_conf({"server_caps": caps}).splitlines() if not line.startswith("#")]
+
+    def test_should_put_the_most_literal_glob_first(self):
+        caps = {"default": "1g", "images": {"*": "4g", "mcp/*": "2g", "mcp/sonarqube:latest": "1536m"}}
+        self.assertEqual(self.conf(caps), ["image mcp/sonarqube:latest 1536m", "image mcp/* 2g", "image * 4g",
+                                           "default 1g"])
+
+    def test_should_keep_none_and_drop_what_docker_would_refuse(self):
+        caps = {"default": "5m", "images": {"a*": "none", "b*": "6m", "c*": "6291455", "d*": "lots", "e*": True,
+                                            "f g": "1g", "": "1g", "h*": 1073741824, "i*": "2g\n", "j*": None}}
+        # "2g\n" comes out trimmed: a newline never reaches shim.conf.
+        self.assertEqual(self.conf(caps), ["image a* none", "image b* 6m", "image h* 1073741824", "image i* 2g"])
+
+    def test_should_take_only_ascii_values_and_printable_globs(self):
+        caps = {"images": {"a*": "\uff11\uff12g", "b*": "0512m", "c\x00*": "1g", "d\u00e9*": "1g", "e\t*": "1g",
+                           "f*": "1G"}}
+        self.assertEqual(self.conf(caps), ["image f* 1G"])
+
+    def test_should_write_no_caps_when_server_caps_is_off(self):
+        self.assertEqual(self.conf(False), [])
+        self.assertEqual(self.conf({"default": "none", "images": []}), ["default none"])
 
 
 class PromptTests(HookTestCase):

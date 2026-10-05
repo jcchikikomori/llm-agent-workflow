@@ -129,16 +129,21 @@ def session_rows(view: dict, cfg: dict) -> list:
         work = view["work"][session.key]
         work_kb = sum(view["procs"][p].rss_kb for p in work if p in view["procs"])
         tree_kb = procs_mod.tree_rss_kb(view["procs"], session.pid)
-        owned = [c for c in view["containers"]
-                 if view["attrs"].get(c.id) and view["attrs"][c.id].owner == session.key]
+        owned = docker_mod.owned_by(view["containers"], view["attrs"], session.key)
+        servers = [{"name": c.name, "state": c.state, "mem_kb": (docker_mod.cgroup_mem(c.id) or 0) // 1024}
+                   for c in docker_mod.owned_by(view["containers"], view["attrs"], session.key, "server")]
+        server_kb = sum(c["mem_kb"] for c in servers)
         rows.append({
             "key": session.key, "pid": session.pid, "session_id": session.session_id[:8],
             "cwd": session.cwd, "kind": session.kind,
             "foreground": session.key in protected, "frozen": session.key in frozen,
-            "tree_kb": tree_kb, "baseline_kb": max(0, tree_kb - work_kb),
+            # Baseline is what the session costs while idle: its own tree
+            # minus Bash work, plus the MCP/LSP servers it keeps running.
+            "tree_kb": tree_kb, "baseline_kb": max(0, tree_kb - work_kb) + server_kb, "server_kb": server_kb,
             "work_procs": len(work), "work_kb": work_kb,
             "containers": [{"name": c.name, "state": c.state, "mem_kb": (docker_mod.cgroup_mem(c.id) or 0) // 1024}
                            for c in owned],
+            "servers": servers,
         })
     return rows
 
@@ -149,7 +154,7 @@ def cmd_sessions(args, cfg) -> int:
     owned_ids = {cid for cid, attr in view["attrs"].items() if attr.owner}
     unowned = [c for c in view["containers"] if c.id not in owned_ids]
     unowned_kb = sum((docker_mod.cgroup_mem(c.id) or 0) // 1024 for c in unowned)
-    owned_kb = sum(c["mem_kb"] for row in rows for c in row["containers"])
+    owned_kb = sum(c["mem_kb"] for row in rows for c in row["containers"] + row["servers"])
     meminfo = pressure.read_meminfo(common.proc_root())
     used_kb = meminfo.get("MemTotal", 0) - meminfo.get("MemAvailable", 0)
     other_kb = max(0, used_kb - sum(r["tree_kb"] for r in rows) - owned_kb - unowned_kb) if meminfo else None
@@ -161,12 +166,14 @@ def cmd_sessions(args, cfg) -> int:
     print(f"{'PID':>8}  {'FLAGS':<6} {'TREE':>9} {'BASELINE':>9} {'WORK':>14}  CONTAINERS  CWD")
     for row in rows:
         flags = ("F" if row["foreground"] else "-") + ("Z" if row["frozen"] else "-") + row["kind"][:1]
-        containers = ", ".join(f"{c['name']}({fmt_kb(c['mem_kb'])}{', paused' if c['state'] == 'paused' else ''})"
-                               for c in row["containers"]) or "-"
+        containers = ", ".join([f"{c['name']}({fmt_kb(c['mem_kb'])}{', paused' if c['state'] == 'paused' else ''})"
+                                for c in row["containers"]] +
+                               [f"{c['name']}({fmt_kb(c['mem_kb'])}, server)" for c in row["servers"]]) or "-"
         work = f"{row['work_procs']}p {fmt_kb(row['work_kb'])}"
         print(f"{row['pid']:>8}  {flags:<6} {fmt_kb(row['tree_kb']):>9} {fmt_kb(row['baseline_kb']):>9} "
               f"{work:>14}  {containers}  {row['cwd']}")
-    print(f"unattributed containers: {len(unowned)} using {fmt_kb(unowned_kb)} (MCP/LSP servers, shared services)")
+    print(f"unattributed containers: {len(unowned)} using {fmt_kb(unowned_kb)} "
+          "(shared services, or MCP/LSP servers started without the shims on Claude Code's PATH)")
     if other_kb is not None:
         print(f"other (kernel, page cache, other distros): {fmt_kb(other_kb)}")
     if view["docker_error"]:
@@ -234,8 +241,8 @@ def cmd_stop(args, cfg) -> int:
         print(SELF_REFUSAL.format(verb="stop", effect="be killed"), file=sys.stderr)
         return 1
     work = view["work"][session.key]
-    owned = [c for c in view["containers"]
-             if view["attrs"].get(c.id) and view["attrs"][c.id].owner == session.key]
+    # The session keeps running, so its MCP/LSP server containers stay up.
+    owned = docker_mod.owned_by(view["containers"], view["attrs"], session.key)
     names = ", ".join(c.name for c in owned) or "none"
     if not args.yes:
         print(f"would stop {len(work)} processes and containers: {names} of {session.key} ({session.cwd}); "
@@ -291,11 +298,12 @@ def doctor_checks(cfg: dict, view: dict | None = None) -> list:
             for pid in pids:
                 invocation = docker_mod.docker_invocation(view["procs"][pid].cmdline) if pid in view["procs"] else None
                 if invocation and invocation[0] == "run":
-                    labeled = any(a.owner == key for a in view["attrs"].values())
+                    labeled = any(a.owner == key and a.role == "work" for a in view["attrs"].values())
                     if not labeled:
                         checks.append(("warn", f"session {key} runs `docker run` without resource-guard labels: "
                                                "the shim is bypassed (alias or absolute path?)"))
                         break
+    checks.extend(shims_checks(view))
     if wsl["wsl"]:
         status = common.read_json(pressure.status_path(), {}) or {}
         for line in wsl_mod.doctor_advice(wsl_mod.load_wslconfig(), status.get("host")):
@@ -303,6 +311,40 @@ def doctor_checks(cfg: dict, view: dict | None = None) -> list:
         link = common.state_dir() / "bin" / "resource-guard"
         checks.append(("info", f"escape hatch from PowerShell: wsl.exe -d {wsl['distro'] or '<distro>'} -e {link} resume --all"))
     return checks
+
+
+def shims_checks(view: dict) -> list:
+    """Whether each session's own PATH, the one its MCP/LSP servers inherit,
+    has a shim directory on it: without one their containers are neither
+    labeled nor capped. A directory counts only by the shim's own marker
+    file, so a dangling link doesn't pass; /mnt/* (the Windows PATH under
+    WSL) is skipped, a 9p stat is slow."""
+    marker = ".resource-guard-shim"
+    shims = common.state_dir() / "shims"
+    checks = []
+    if (shims.is_symlink() or shims.exists()) and not (shims / marker).exists():
+        checks.append(("warn", f"{shims} doesn't lead to the shims (a dangling link or a directory of its own): "
+                               "the next Claude Code session start relinks it, once whatever is there is removed"))
+
+    def on_path(path: str) -> bool:
+        return any(entry.startswith("/") and not entry.startswith("/mnt/") and Path(entry, marker).exists()
+                   for entry in path.split(":"))
+
+    paths = [procs_mod.read_environ(s.pid).get("PATH") for s in view["sessions"]]
+    paths = [p for p in paths if p is not None]
+    if not paths:
+        return checks
+    missing = sum(not on_path(p) for p in paths)
+    if not missing:
+        return checks + [("ok", "session MCP/LSP containers are labeled and capped: "
+                                f"shims on PATH in all {len(paths)} sessions")]
+    home, shown = str(Path.home()), str(shims)
+    if shown.startswith(home + "/"):
+        shown = "$HOME" + shown[len(home):]
+    rc = {"zsh": "~/.zshrc", "bash": "~/.bashrc"}.get(Path(os.environ.get("SHELL", "")).name, "your shell rc file")
+    return checks + [("warn", f"{missing} of {len(paths)} sessions start MCP/LSP servers without the shims, so their "
+                              f"containers are neither labeled nor capped: add `export PATH=\"{shown}:$PATH\"` to {rc}, "
+                              "then restart Claude Code")]
 
 
 def cmd_doctor(args, cfg) -> int:

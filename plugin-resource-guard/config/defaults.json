@@ -97,5 +97,12 @@
     "*redis*",
     "*mongo*"
   ],
+  "server_caps": {
+    "default": "2g",
+    "images": {
+      "*mempalace*": "3g",
+      "ghcr.io/rvben/rumdl*": "512m"
+    }
+  },
   "target_pids": []
 }

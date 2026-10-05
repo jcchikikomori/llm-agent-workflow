@@ -5,6 +5,7 @@ import os
 import threading
 import time
 import unittest
+from unittest import mock
 
 from fixtures import SandboxTestCase
 
@@ -74,10 +75,22 @@ class JsonTests(SandboxTestCase):
 
     def test_should_clean_up_the_temp_file_when_writing_fails(self):
         path = self.state / "y.json"
-        with self.assertRaises(TypeError):
-            common.atomic_write_json(path, {"a": object()})
+        with mock.patch.object(common.os, "replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                common.atomic_write_json(path, {"a": 1})
         self.assertEqual([p.name for p in self.state.iterdir() if p.name.startswith(".y.json")], [])
         self.assertFalse(path.exists())
+
+    def test_should_write_nothing_when_the_data_does_not_serialize(self):
+        path = self.state / "z.json"
+        with self.assertRaises(TypeError):
+            common.atomic_write_json(path, {"a": object()})
+        self.assertFalse(path.exists())
+
+    def test_should_write_text_atomically(self):
+        common.atomic_write_text(self.state / "shim.conf", "default 2g\n")
+        self.assertEqual((self.state / "shim.conf").read_text(), "default 2g\n")
+        self.assertEqual(oct((self.state / "shim.conf").stat().st_mode & 0o777), "0o600")
 
     def test_should_return_default_for_missing_or_broken_json(self):
         self.assertEqual(common.read_json(self.tmp / "nope.json", {"d": 1}), {"d": 1})
