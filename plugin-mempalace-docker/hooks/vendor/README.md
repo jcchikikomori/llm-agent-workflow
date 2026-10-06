@@ -59,9 +59,9 @@ Update `NOTICE` with the new version and commit hash.
 
 ## The stdin trap
 
-`docker run -i` streams the host's stdin into the container and drains it,
-whether or not the container ever reads it. These hooks probe
-`hooks.auto_save` with a `python3 -c ...` call *before* they run
+`docker exec -i` (like `docker run -i` before it) streams the host's stdin
+into the container and drains it, whether or not the process ever reads it. These hooks probe
+`hooks.auto_save` with a `python3 -c ...` call _before_ they run
 `INPUT=$(cat)`. Attaching stdin to that probe swallows the hook payload, and
 the hook then logs `Session unknown` with an empty `INPUT` — no error, no
 traceback, nothing in `last_python_err.log`.

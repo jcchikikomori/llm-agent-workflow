@@ -117,7 +117,7 @@
     {
       "name": "mempalace-docker",
       "source": "./plugin-mempalace-docker",
-      "description": "Runs MemPalace from Docker \u2014 auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one shared palace in a named volume, mounts the current project, and auto-mines it per project",
+      "description": "Runs MemPalace from Docker as one shared HTTP hub for every session \u2014 auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one palace in a named volume, mounts registered projects, stops when idle, and auto-mines per project",
       "category": "behavior-control"
     },
     {

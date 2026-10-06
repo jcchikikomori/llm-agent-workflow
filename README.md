@@ -60,7 +60,7 @@ Platform support: macOS, Linux, WSL, native Windows.
 | `memory-guard` | behavior-control | Watches sensitive docs and routes changes to memory + remove/stash policy |
 | `token-saver` | behavior-control | Enforces token-efficient prompting and session hygiene |
 | `opencode-migrate` | workflow-orchestration | Migrates Claude Code setup into OpenCode |
-| `mempalace-docker` | behavior-control | Runs MemPalace through Docker with GPU-aware runtime selection |
+| `mempalace-docker` | behavior-control | Runs MemPalace through Docker as one shared, GPU-aware HTTP hub for every session |
 | `ruby-lsp` | quality-enforcement | ruby-lsp + RuboCop diagnostics after every Ruby edit, advisory Reek smells, Docker-first |
 | `markdown-lsp` | quality-enforcement | rumdl LSP diagnostics after every Markdown edit, skill-derived fallback config, Docker-first |
 | `resource-guard` | behavior-control | Gates heavy work under memory pressure, freezes and resumes background sessions' work and containers, caps each session's docker MCP/LSP containers, WSL-aware |

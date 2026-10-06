@@ -2,8 +2,8 @@
 """
 mempalace-docker SessionStart hook.
 
-Does two things, both advisory -- SessionStart cannot block anything, so it
-only ever surfaces context for Claude to act on (exit 0, additionalContext).
+Everything here is advisory -- SessionStart cannot block anything, so it only
+ever surfaces context for Claude to act on (exit 0, additionalContext).
 
 1. CONFLICT SCAN. This plugin owns the `mempalace` MCP server name, the
    containerized CLI shims, and the save hooks. Any leftover copy of the
@@ -12,9 +12,15 @@ only ever surfaces context for Claude to act on (exit 0, additionalContext).
    collide outright. Reported once per session, and silenced for good once
    the dismissed marker is written.
 
-2. AUTO-MINE. Checks the per-project stamp and, when the project has never
-   been mined / HEAD has moved / the stamp is stale, tells Claude to mine it.
-   The container path is /work, never the host path.
+2. HUB. Registers the current project for the shared hub when it is not
+   covered yet, then runs `hub.sh ensure --check` so an idle-stopped hub is
+   already booting by the time Claude first calls a tool. A hub that runs an
+   older config is reported, never restarted from here.
+
+3. AUTO-MINE. Checks the per-project stamp and, when the project has never
+   been mined / HEAD has moved / the stamp is stale, tells Claude to mine it
+   by its absolute host path -- or to ask for a hub restart first when the
+   hub does not have that path mounted.
 """
 
 import json
@@ -25,12 +31,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from mempalace_docker_common import (  # noqa: E402
+    auto_register_allowed,
     conflicts_dismissed,
+    covering_target,
+    ensure_hub,
     gc_sessions,
+    hub_autostart_enabled,
     mark_session,
-    mine_reason,
-    plugin_root,
+    mine_report,
     project_root,
+    register_project,
+    registry_targets,
     session_marked,
 )
 
@@ -45,6 +56,9 @@ CLAUDE_JSON = HOME / ".claude.json"
 MAX_CLAUDE_JSON_BYTES = 50 * 1024 * 1024
 
 STALE_HOOK_MARKERS = ("plugins/marketplaces/mempalace", ".local/bin/mempal_")
+
+# The one hub.sh message that needs a human decision.
+HUB_ATTENTION_MARKER = "older config"
 
 
 def load_json(path: Path):
@@ -91,10 +105,10 @@ def check_plain_mcp_server():
     return (
         "A hand-rolled `mempalace` MCP server is still defined in "
         "~/.claude.json (top-level mcpServers).\n"
-        "  It duplicates this plugin's server under the same name, mounts a\n"
-        "  single hardcoded project directory, and passes no GPU flags -- so\n"
-        "  a CUDA image runs its embeddings on CPU. Remove that one entry\n"
-        "  (leave the rest of the file alone; it holds unrelated config)."
+        "  It duplicates this plugin's server under the same name and starts\n"
+        "  a second palace writer that the shared hub then refuses. Remove\n"
+        "  that one entry (leave the rest of the file alone; it holds\n"
+        "  unrelated config)."
     )
 
 
@@ -173,26 +187,39 @@ def conflict_report():
     )
 
 
-def mine_report():
-    root = project_root()
-    reason = mine_reason(root)
-    if reason is None:
-        return None
-    return (
-        f"[mempalace-docker] Project not mined into the palace ({reason}):\n"
-        f"      {root}\n"
-        "  This project is bind-mounted into the mempalace container at "
-        "`/work` (read-only).\n"
-        "  Mine it, then record the stamp so this stops being raised:\n"
-        "    1. call mcp__mempalace__mempalace_mine with the path `/work` "
-        "-- the CONTAINER path, never the host path\n"
-        f"    2. run: python3 {plugin_root() / 'scripts' / 'mark_mined.py'}\n"
-        "  Do this in the background of whatever the user actually asked "
-        "for; do not block their request on it, and do not mine twice in one "
-        "session. If the mine fails, say so once and move on -- mention that "
-        "a cold palace volume downloads the ~80 MB embedding model on first "
-        "use, so a slow first call is expected rather than a hung container."
-    )
+def hub_report(root: Path):
+    """Register the project if needed, start the hub, report what needs a human."""
+    notes = []
+    try:
+        # Registered whatever the stamp says: a project mined under 1.x (as
+        # /work) still needs a mount for the next lazy mine-on-empty.
+        if covering_target(root, registry_targets()) is None and auto_register_allowed(root):
+            link, created = register_project(root)
+            if created:
+                notes.append(
+                    f"[mempalace-docker] Registered this project for the shared hub: "
+                    f"{link} -> {root}. The hub mounts it read-only at that path on its "
+                    "next start."
+                )
+    except OSError:
+        pass
+
+    if hub_autostart_enabled():
+        ok, stderr = ensure_hub(check=True)
+        attention = [line for line in (stderr or "").splitlines() if HUB_ATTENTION_MARKER in line]
+        if attention:
+            notes.append(
+                "[mempalace-docker] Tell the user once, then carry on:\n  " + "\n  ".join(attention)
+            )
+        elif not ok:
+            tail = "; ".join(line.strip() for line in (stderr or "").splitlines()[-2:] if line.strip())
+            notes.append(
+                "[mempalace-docker] The shared hub could not be started from this hook"
+                + (f" ({tail})" if tail else "")
+                + ". MCP tool calls will fail until it is up; tell the user once and "
+                "suggest: " + str(Path(os.environ.get("CLAUDE_PLUGIN_ROOT", Path(__file__).resolve().parent.parent)) / "scripts" / "hub.sh") + " start"
+            )
+    return notes
 
 
 def main() -> int:
@@ -204,15 +231,18 @@ def main() -> int:
 
     blocks = []
 
-    # The conflict warning is per session; the mine prompt is per project
-    # state, so it stands on its own.
+    # The conflict warning is per session; the hub and mine prompts are per
+    # project state, so they stand on their own.
     if not session_marked(session_id):
         report = conflict_report()
         if report:
             blocks.append(report)
         mark_session(session_id)
 
-    mine = mine_report()
+    root = project_root()
+    blocks.extend(hub_report(root))
+
+    mine = mine_report(root=root)
     if mine:
         blocks.append(mine)
 

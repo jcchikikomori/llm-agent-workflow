@@ -1,35 +1,36 @@
 #!/usr/bin/env bash
-# Containerized python3 with the mempalace package importable.
+# Containerized python3 with the mempalace package importable, run inside the
+# shared hub container.
 #
 # This is the MEMPAL_PYTHON target for the vendored upstream hooks, which call
 # `python3 -m mempalace.hook_shell parse-stop` and friends to parse hook JSON
-# off stdin. Overriding the entrypoint gives them a real interpreter rather
-# than the CLI dispatcher.
+# off stdin. `docker exec` into the running hub gives them a real interpreter
+# without starting a container per call.
 #
 # STDIN IS NOT ALWAYS ATTACHED, and that is deliberate.
 #
-# `docker run -i` streams the host's stdin into the container and drains it,
-# whether or not the container ever reads it. The save and precompact hooks
-# probe `hooks.auto_save` with a `python3 -c ...` call BEFORE they run
-# `INPUT=$(cat)` -- so attaching stdin to that probe swallows the hook payload
-# and the hook then logs "Session unknown" with an empty INPUT. Took a bash -x
-# run to see it, because nothing errors.
+# `docker exec -i` streams the host's stdin into the container and drains it,
+# whether or not the process ever reads it (exactly like `docker run -i`).
+# The save and precompact hooks probe `hooks.auto_save` with a `python3 -c ...`
+# call BEFORE they run `INPUT=$(cat)` -- so attaching stdin to that probe
+# swallows the hook payload and the hook then logs "Session unknown" with an
+# empty INPUT. Took a bash -x run to see it, because nothing errors.
 #
 # Rule: `-c` (inline code) never reads stdin in any of the vendored call sites,
 # so it runs detached from stdin. Everything else (`-m ...`) gets `-i`.
 # Verified against every MEMPAL_PYTHON call site in hooks/vendor/ --
-# re-check it when refreshing those scripts.
+# re-check it when refreshing those scripts (see hooks/vendor/README.md).
 set -euo pipefail
 
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$HERE/lib/common.sh"
 
-mp_select_image
-mp_add_mounts
+# No health wait: these callers only parse JSON and count messages, which
+# needs the container running, not the HTTP server.
+"$HERE/hub.sh" ensure >&2 || true
 
 if [ "${1:-}" = "-c" ]; then
-    mp_exec_docker run --rm "${MP_RUN_ARGS[@]}" \
-        --entrypoint /app/.venv/bin/python3 "$MP_IMAGE" "$@" </dev/null
+    mp_exec_docker exec "$MP_HUB_NAME" /app/.venv/bin/python3 "$@" </dev/null
 else
-    mp_exec_docker run -i --rm "${MP_RUN_ARGS[@]}" \
-        --entrypoint /app/.venv/bin/python3 "$MP_IMAGE" "$@"
+    mp_exec_docker exec -i "$MP_HUB_NAME" /app/.venv/bin/python3 "$@"
 fi
