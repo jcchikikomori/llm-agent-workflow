@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit + end-to-end tests for the claude-attribution PreToolUse hook.
+"""Unit + end-to-end tests for the ai-attribution PreToolUse hook.
 
 Run with either:
 
@@ -7,7 +7,8 @@ Run with either:
   python3 -m pytest plugin-attribution/tests
 
 The end-to-end tests invoke the real hook binary in a subprocess with a
-temporary HOME so the reviewer-name file never touches the real one.
+temporary HOME, and without the inherited XDG_CONFIG_HOME, so the reviewer-name
+files never touch the real ones.
 """
 
 import json
@@ -17,19 +18,31 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HOOK_DIR = Path(__file__).resolve().parents[1] / "hooks"
 HOOK = HOOK_DIR / "attribution_hook.py"
 NAME = "Jane Reviewer"
+OTHER_NAME = "Someone Else"
+POST_TOOL = "mcp__github__create_issue"
+IS_ROOT = getattr(os, "geteuid", lambda: -1)() == 0
 
 sys.path.insert(0, str(HOOK_DIR))
 import attribution_hook as hook  # noqa: E402
 
 
-def run_hook(tool_name, tool_input, home):
-    """Run the hook binary with a JSON payload; return (exit_code, stderr)."""
+def run_hook(tool_name, tool_input, home, xdg_config_home=None):
+    """Run the hook binary with a JSON payload; return (exit_code, stderr).
+
+    HOME points at the temp dir. XDG_CONFIG_HOME is dropped from the inherited
+    environment so the hook's `~/.config` default lands under that temp HOME;
+    pass `xdg_config_home` to point the primary name file somewhere else.
+    """
     payload = json.dumps({"tool_name": tool_name, "tool_input": tool_input})
     env = dict(os.environ, HOME=str(home))
+    env.pop("XDG_CONFIG_HOME", None)
+    if xdg_config_home is not None:
+        env["XDG_CONFIG_HOME"] = str(xdg_config_home)
     proc = subprocess.run(
         [sys.executable, str(HOOK)],
         input=payload,
@@ -40,12 +53,42 @@ def run_hook(tool_name, tool_input, home):
     return proc.returncode, proc.stderr
 
 
+def primary_name_file(config_home):
+    """The tool-neutral name file under a given config dir."""
+    return Path(config_home) / "llm-agent-workflow" / "attribution-name.txt"
+
+
+def legacy_claude_name_file(home):
+    """The pre-2.0 Claude Code name file (read-only fallback)."""
+    return Path(home) / ".claude" / "claude-attribution-name.txt"
+
+
+def legacy_opencode_name_file(home):
+    """The pre-2.0 opencode name file (read-only fallback)."""
+    return Path(home) / ".config" / "opencode" / "claude-attribution-name.txt"
+
+
+def write_name(path, name):
+    """Write a reviewer-name file, creating parent dirs; return the path."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(name, encoding="utf-8")
+    return path
+
+
 def make_home(tmpdir):
-    """Create a temp HOME with the reviewer name file; return the dir."""
+    """Create a temp HOME with the reviewer name in the primary file; return the dir."""
     home = Path(tmpdir) / "home"
-    (home / ".claude").mkdir(parents=True)
-    (home / ".claude" / "claude-attribution-name.txt").write_text(NAME)
+    write_name(primary_name_file(home / ".config"), NAME)
     return home
+
+
+def attributed_post(name=NAME, family="Claude"):
+    """An MCP post body carrying the attribution line for `family` and `name`."""
+    return {
+        "title": "Fix flaky test",
+        "body": f"Fixes timeout.\n\n🤖 Written by {family}, reviewed by {name}",
+    }
 
 
 class HasAttributionTests(unittest.TestCase):
@@ -63,6 +106,99 @@ class HasAttributionTests(unittest.TestCase):
     def test_attribution_fail_wrong_reviewer(self):
         body = "🤖 Written by Claude, reviewed by Someone Else"
         self.assertFalse(hook.has_attribution(body, NAME))
+
+    # --- Family-agnostic validator (ADR-0002): AC-031 positives ---
+
+    def test_attribution_pass_with_other_family(self):
+        body = "Fixed the flaky test.\n\n🤖 Written by GPT, reviewed by Jane Reviewer"
+        self.assertTrue(hook.has_attribution(body, NAME))
+
+    def test_attribution_pass_with_multi_word_family(self):
+        body = "Written by Claude Opus 4, reviewed by Jane Reviewer"
+        self.assertTrue(hook.has_attribution(body, NAME))
+
+    def test_attribution_pass_without_comma(self):
+        body = "Written by Claude reviewed by Jane Reviewer"
+        self.assertTrue(hook.has_attribution(body, NAME))
+
+    def test_attribution_pass_family_of_40_characters(self):
+        body = "Written by " + "F" * 40 + ", reviewed by Jane Reviewer"
+        self.assertTrue(hook.has_attribution(body, NAME))
+
+    def test_attribution_is_case_insensitive(self):
+        body = "WRITTEN BY gpt, REVIEWED BY jane reviewer"
+        self.assertTrue(hook.has_attribution(body, NAME))
+
+    # --- Family-agnostic validator (ADR-0002): AC-032 negatives ---
+
+    def test_attribution_fail_empty_family(self):
+        body = "Written by , reviewed by Jane Reviewer"
+        self.assertFalse(hook.has_attribution(body, NAME))
+
+    def test_attribution_fail_whitespace_only_family(self):
+        body = "Written by    , reviewed by Jane Reviewer"
+        self.assertFalse(hook.has_attribution(body, NAME))
+
+    def test_attribution_fail_family_over_40_characters(self):
+        body = "Written by " + "F" * 41 + ", reviewed by Jane Reviewer"
+        self.assertFalse(hook.has_attribution(body, NAME))
+
+    def test_attribution_fail_family_with_comma(self):
+        body = "Written by Claude, Inc, reviewed by Jane Reviewer"
+        self.assertFalse(hook.has_attribution(body, NAME))
+
+    def test_attribution_fail_split_before_reviewed(self):
+        body = "🤖 Written by GPT,\nreviewed by Jane Reviewer"
+        self.assertFalse(hook.has_attribution(body, NAME))
+
+    def test_attribution_fail_split_after_written_by(self):
+        body = "🤖 Written by\nClaude, reviewed by Jane Reviewer"
+        self.assertFalse(hook.has_attribution(body, NAME))
+
+
+class BlockMessageTests(unittest.TestCase):
+    MESSAGES = ("SETUP_MESSAGE", "MISSING_MESSAGE", "SLOP_MESSAGE", "COMMIT_TRAILER_MESSAGE")
+
+    def test_every_block_message_uses_the_ai_attribution_prefix(self):
+        for constant in self.MESSAGES:
+            with self.subTest(message=constant):
+                self.assertTrue(getattr(hook, constant).startswith("[ai-attribution] BLOCKED:"))
+
+    def test_no_block_message_mentions_the_old_plugin_name(self):
+        for constant in self.MESSAGES:
+            with self.subTest(message=constant):
+                self.assertNotIn("claude-attribution", getattr(hook, constant))
+
+    def test_setup_message_names_the_primary_name_file(self):
+        self.assertIn("XDG_CONFIG_HOME", hook.SETUP_MESSAGE)
+        self.assertIn("llm-agent-workflow/attribution-name.txt", hook.SETUP_MESSAGE)
+
+
+class NameFileResolutionTests(unittest.TestCase):
+    """Candidate order and XDG handling, resolved in-process with a patched environment."""
+
+    def test_candidates_are_primary_then_claude_legacy_then_opencode_legacy(self):
+        with mock.patch.dict(os.environ, {"HOME": "/h", "XDG_CONFIG_HOME": "/xdg"}):
+            candidates = hook.name_file_candidates()
+        self.assertEqual(
+            candidates,
+            [
+                Path("/xdg/llm-agent-workflow/attribution-name.txt"),
+                Path("/h/.claude/claude-attribution-name.txt"),
+                Path("/h/.config/opencode/claude-attribution-name.txt"),
+            ],
+        )
+
+    def test_primary_defaults_to_dot_config_when_xdg_config_home_is_unset(self):
+        with mock.patch.dict(os.environ, {"HOME": "/h"}):
+            os.environ.pop("XDG_CONFIG_HOME", None)
+            primary = hook.name_file_candidates()[0]
+        self.assertEqual(primary, Path("/h/.config/llm-agent-workflow/attribution-name.txt"))
+
+    def test_primary_defaults_to_dot_config_when_xdg_config_home_is_empty(self):
+        with mock.patch.dict(os.environ, {"HOME": "/h", "XDG_CONFIG_HOME": ""}):
+            primary = hook.name_file_candidates()[0]
+        self.assertEqual(primary, Path("/h/.config/llm-agent-workflow/attribution-name.txt"))
 
 
 class NativeAttributionTests(unittest.TestCase):
@@ -175,6 +311,24 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("Attribution line missing", stderr)
 
+    def test_mcp_post_with_other_family_line_allowed(self):
+        code, _ = run_hook(POST_TOOL, attributed_post(family="GPT"), self.home)
+        self.assertEqual(code, 0)
+
+    def test_bash_post_with_other_family_line_allowed(self):
+        code, _ = run_hook(
+            "Bash",
+            {"command": f'gh pr comment 42 --body "Fixed the timeout. 🤖 Written by GPT, reviewed by {NAME}"'},
+            self.home,
+        )
+        self.assertEqual(code, 0)
+
+    def test_missing_line_message_suggests_the_claude_line(self):
+        code, stderr = run_hook(POST_TOOL, {"title": "Fix flaky test", "body": "Fixes timeout."}, self.home)
+        self.assertEqual(code, 2)
+        self.assertIn("[ai-attribution] BLOCKED: Attribution line missing", stderr)
+        self.assertIn(f"🤖 Written by Claude, reviewed by {NAME}", stderr)
+
     # --- Native-attribution bypass ---
 
     def test_slack_mcp_bypasses_checks(self):
@@ -238,6 +392,89 @@ class EndToEndTests(unittest.TestCase):
     def test_unrelated_bash_command_allowed(self):
         code, _ = run_hook("Bash", {"command": "ls -la"}, self.home)
         self.assertEqual(code, 0)
+
+
+class NameFileEndToEndTests(unittest.TestCase):
+    """Real hook binary; each test places the reviewer name in a different file."""
+
+    def setUp(self):
+        # addCleanup (not tearDown) so later-registered cleanups, such as the
+        # chmod restore in the unreadable-file test, run before the dir is removed.
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.home = Path(self._tmp.name) / "home"
+        self.home.mkdir()
+        self.primary = primary_name_file(self.home / ".config")
+
+    # --- AC-031: fallbacks, precedence, XDG ---
+
+    def test_legacy_claude_name_file_and_claude_line_still_pass(self):
+        """Backward compatibility: the pre-2.0 Claude Code setup is unchanged for the user."""
+        write_name(legacy_claude_name_file(self.home), NAME)
+        code, _ = run_hook(POST_TOOL, attributed_post(family="Claude"), self.home)
+        self.assertEqual(code, 0)
+
+    def test_name_only_in_legacy_claude_file_is_read(self):
+        write_name(legacy_claude_name_file(self.home), NAME)
+        code, _ = run_hook(POST_TOOL, attributed_post(family="GPT"), self.home)
+        self.assertEqual(code, 0)
+
+    def test_name_only_in_legacy_opencode_file_is_read(self):
+        write_name(legacy_opencode_name_file(self.home), NAME)
+        code, _ = run_hook(POST_TOOL, attributed_post(family="GPT"), self.home)
+        self.assertEqual(code, 0)
+
+    def test_primary_file_wins_when_legacy_files_disagree(self):
+        write_name(self.primary, NAME)
+        write_name(legacy_claude_name_file(self.home), OTHER_NAME)
+        write_name(legacy_opencode_name_file(self.home), OTHER_NAME)
+        code, stderr = run_hook(POST_TOOL, attributed_post(name=OTHER_NAME), self.home)
+        self.assertEqual(code, 2)
+        self.assertIn(f"reviewed by {NAME}", stderr)
+
+    def test_xdg_config_home_moves_the_primary_file(self):
+        xdg = Path(self._tmp.name) / "xdg"
+        write_name(primary_name_file(xdg), NAME)
+        code, _ = run_hook(POST_TOOL, attributed_post(), self.home, xdg_config_home=xdg)
+        self.assertEqual(code, 0)
+
+    def test_dot_config_is_not_read_when_xdg_config_home_points_elsewhere(self):
+        write_name(self.primary, NAME)
+        xdg = Path(self._tmp.name) / "xdg"
+        xdg.mkdir()
+        code, stderr = run_hook(POST_TOOL, attributed_post(), self.home, xdg_config_home=xdg)
+        self.assertEqual(code, 2)
+        self.assertIn("Reviewer name not configured", stderr)
+
+    # --- AC-032: not configured, fail closed ---
+
+    def test_no_name_file_blocks_with_setup_message_naming_the_primary_path(self):
+        code, stderr = run_hook(POST_TOOL, attributed_post(), self.home)
+        self.assertEqual(code, 2)
+        self.assertIn("[ai-attribution] BLOCKED: Reviewer name not configured", stderr)
+        self.assertIn("llm-agent-workflow/attribution-name.txt", stderr)
+
+    @unittest.skipIf(IS_ROOT, "chmod 000 does not stop root from reading the file")
+    def test_unreadable_name_file_blocks_with_setup_message(self):
+        path = write_name(self.primary, NAME)
+        path.chmod(0o000)
+        self.addCleanup(path.chmod, 0o600)
+        code, stderr = run_hook(POST_TOOL, attributed_post(), self.home)
+        self.assertEqual(code, 2)
+        self.assertIn("Reviewer name not configured", stderr)
+
+    def test_directory_as_name_file_blocks_with_setup_message(self):
+        self.primary.mkdir(parents=True)
+        code, stderr = run_hook(POST_TOOL, attributed_post(), self.home)
+        self.assertEqual(code, 2)
+        self.assertIn("Reviewer name not configured", stderr)
+
+    def test_undecodable_name_file_blocks_with_setup_message(self):
+        self.primary.parent.mkdir(parents=True)
+        self.primary.write_bytes(b"\xff\xfe\xfa")
+        code, stderr = run_hook(POST_TOOL, attributed_post(), self.home)
+        self.assertEqual(code, 2)
+        self.assertIn("Reviewer name not configured", stderr)
 
 
 if __name__ == "__main__":

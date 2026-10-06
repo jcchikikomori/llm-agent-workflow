@@ -4,28 +4,73 @@ import { join } from "node:path"
 import type { Plugin } from "@opencode-ai/plugin"
 
 /**
- * opencode-claude-attribution plugin.
+ * opencode-ai-attribution plugin.
  *
  * Anti-AI-slop + attribution governance for external posts:
- *   - blocks posts that lack the "🤖 Written by Claude, reviewed by <user>"
- *     attribution line (dynamic, ANY MCP server)
+ *   - blocks posts that lack the "🤖 Written by <Family>, reviewed by <user>"
+ *     attribution line (dynamic, ANY configured MCP server)
  *   - blocks clear AI-slop filler phrases in post bodies / posting commands
  *   - blocks AI-generated trailers in `git commit` messages
+ *
+ * Every check runs for every model; <Family> in the suggested line comes from
+ * `chat.params`, and the check accepts any family.
  *
  * OpenCode port of the Claude Code PreToolUse hook
  * (plugin-attribution/hooks/attribution_hook.py):
  *   - `tool.execute.before` for `bash`  -> was `Bash` matcher branch
- *   - `tool.execute.before` for `mcp__*` -> was `mcp__.*` matcher branch
+ *   - `tool.execute.before` for MCP tools -> was `mcp__.*` matcher branch
  *   - `throw new Error(...)`             -> was `sys.exit(2)` block
+ *   - `config` collects MCP server names: opencode names MCP tools
+ *     `<server>_<tool>` (sanitized), not `mcp__<server>__<tool>`
  */
 
-const NAME_FILE = join(homedir(), ".config", "opencode", "claude-attribution-name.txt")
+// Family named in the suggested line for a session chat.params has not mapped.
+const DEFAULT_FAMILY = "AI"
 
-// MCP tool name patterns that provide native AI attribution,
+// Longest <Family> accepted in an attribution line.
+const MAX_FAMILY_LENGTH = 40
+
+// Reviewer-name files: the primary under `${XDG_CONFIG_HOME:-~/.config}`, then
+// the 1.x files under the home dir, opencode's first. Read, never written.
+const PRIMARY_NAME_FILE = join("llm-agent-workflow", "attribution-name.txt")
+const LEGACY_OPENCODE_NAME_FILE = join(".config", "opencode", "claude-attribution-name.txt")
+const LEGACY_CLAUDE_CODE_NAME_FILE = join(".claude", "claude-attribution-name.txt")
+
+// Strict UTF-8, so a name file that does not decode counts as unreadable.
+const UTF8 = new TextDecoder("utf-8", { fatal: true })
+
+// Prefix of `mcp__<server>__<tool>` names, accepted next to the configured
+// `<server>_` prefixes for forward compatibility.
+const MCP_TOOL_PREFIX = "mcp__"
+
+// MCP servers that provide native AI attribution,
 // so the text attribution line is not required.
 // Slack adds "Sent using @Claude" natively when posting via its AI integration.
-const NATIVE_ATTRIBUTION_TOOL_PATTERNS = [
-  "^mcp__slack__",
+const NATIVE_ATTRIBUTION_SERVERS = [
+  "slack",
+]
+
+interface ModelFamily {
+  family: string
+  idTerms: readonly string[]
+  providerTerms: readonly string[]
+}
+
+// ADR-0002 family table, in match order. Matches are case-insensitive
+// substrings. The model id is tried against every row before the providerID,
+// so routed providers such as github-copilot or openrouter still resolve the
+// right family. No match is DEFAULT_FAMILY.
+const MODEL_FAMILIES: readonly ModelFamily[] = [
+  { family: "Claude", idTerms: ["claude"], providerTerms: ["anthropic"] },
+  { family: "GPT", idTerms: ["gpt", "o1", "o3", "o4", "codex"], providerTerms: ["openai"] },
+  { family: "Gemini", idTerms: ["gemini", "gemma"], providerTerms: ["google", "google-vertex"] },
+  { family: "DeepSeek", idTerms: ["deepseek"], providerTerms: [] },
+  { family: "Mistral", idTerms: ["mistral", "codestral", "devstral"], providerTerms: [] },
+  { family: "Llama", idTerms: ["llama"], providerTerms: [] },
+  { family: "Qwen", idTerms: ["qwen"], providerTerms: [] },
+  { family: "Grok", idTerms: ["grok"], providerTerms: ["xai"] },
+  { family: "Kimi", idTerms: ["kimi"], providerTerms: ["moonshotai"] },
+  { family: "GLM", idTerms: ["glm"], providerTerms: ["zhipuai", "zai"] },
 ]
 
 // Fields that typically contain postable text body.
@@ -96,20 +141,22 @@ const COMMIT_AI_TRAILER_PATTERNS = [
     + ")\\b",
 ]
 
-const SETUP_MESSAGE = `[opencode-claude-attribution] BLOCKED: Reviewer name not configured.
+const SETUP_MESSAGE = `[ai-attribution] BLOCKED: Reviewer name not configured.
 
 Before posting to external platforms, set up your attribution name.
 Ask the user for their name and save it:
 
-  echo "Their Name" > ~/.config/opencode/claude-attribution-name.txt
+  mkdir -p "\${XDG_CONFIG_HOME:-$HOME/.config}/llm-agent-workflow"
+  echo "Their Name" > "\${XDG_CONFIG_HOME:-$HOME/.config}/llm-agent-workflow/attribution-name.txt"
 
 Then show the complete post content to the user for approval before retrying.`
 
-const MISSING_MESSAGE = (name: string) => `[opencode-claude-attribution] BLOCKED: Attribution line missing from post body.
+const MISSING_MESSAGE = (family: string, name: string) =>
+  `[ai-attribution] BLOCKED: Attribution line missing from post body.
 
 All external posts must include this attribution line:
 
-  🤖 Written by Claude, reviewed by ${name}
+  🤖 Written by ${family}, reviewed by ${name}
 
 IMPORTANT: Before retrying, you MUST:
 1. Add the attribution line to the post body
@@ -117,7 +164,7 @@ IMPORTANT: Before retrying, you MUST:
 3. Ask the user to approve before posting
 4. Only retry after user confirms`
 
-const COMMIT_TRAILER_MESSAGE = `[opencode-claude-attribution] BLOCKED: AI-generated trailer detected in commit message.
+const COMMIT_TRAILER_MESSAGE = `[ai-attribution] BLOCKED: AI-generated trailer detected in commit message.
 
 Remove AI attribution trailers from the commit message:
   - "Co-authored-by:" lines naming an AI model or assistant
@@ -126,7 +173,7 @@ Remove AI attribution trailers from the commit message:
 Keep the commit message concise, factual, and free of AI attribution. Then
 retry the commit.`
 
-const SLOP_MESSAGE = (phrases: string) => `[opencode-claude-attribution] BLOCKED: AI-slop filler detected in post content.
+const SLOP_MESSAGE = (phrases: string) => `[ai-attribution] BLOCKED: AI-slop filler detected in post content.
 
 Remove these phrases and rewrite with concrete, specific language:
   ${phrases}
@@ -137,13 +184,73 @@ comments, structure feedback as: location -> problem -> proposed fix.
 IMPORTANT: Rewrite the content, show the COMPLETE updated post to the user,
 and get approval before retrying.`
 
-function getReviewerName(): string | null {
+function configHome(): string {
+  /** Return `${XDG_CONFIG_HOME:-~/.config}`; an empty variable counts as unset. */
+  return process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
+}
+
+function nameFileCandidates(): string[] {
+  /** Return the reviewer-name files in read order: primary, then the legacy fallbacks. */
+  const home = homedir()
+  return [
+    join(configHome(), PRIMARY_NAME_FILE),
+    join(home, LEGACY_OPENCODE_NAME_FILE),
+    join(home, LEGACY_CLAUDE_CODE_NAME_FILE),
+  ]
+}
+
+function readName(path: string): string {
+  /** Return the trimmed name in one file, or "" when the file holds none or cannot be read. */
   try {
-    const name = readFileSync(NAME_FILE, "utf8").trim()
-    return name || null
+    return UTF8.decode(readFileSync(path)).trim()
   } catch {
-    return null
+    // Missing, a directory, no permission or not UTF-8: this file is "not
+    // configured", so the caller tries the next one and fails closed after the last.
+    return ""
   }
+}
+
+function getReviewerName(): string | null {
+  /** Return the first non-empty reviewer name, or null when none is configured. */
+  for (const path of nameFileCandidates()) {
+    const name = readName(path)
+    if (name) return name
+  }
+  return null
+}
+
+function familyMatching(value: unknown, termsOf: (row: ModelFamily) => readonly string[]): string | null {
+  /** Return the first family whose terms occur in value, or null. */
+  if (typeof value !== "string") return null
+  const text = value.toLowerCase()
+  const row = MODEL_FAMILIES.find((candidate) => termsOf(candidate).some((term) => text.includes(term)))
+  return row ? row.family : null
+}
+
+function modelFamily(model: { id?: unknown; providerID?: unknown } | undefined): string {
+  /** Map a chat.params model to its family: the model id first, then the providerID. */
+  return familyMatching(model?.id, (row) => row.idTerms)
+    ?? familyMatching(model?.providerID, (row) => row.providerTerms)
+    ?? DEFAULT_FAMILY
+}
+
+function sanitizeMcpName(name: string): string {
+  /** opencode's MCP name rule: every character outside [a-zA-Z0-9_-] becomes "_". */
+  return name.replace(/[^a-zA-Z0-9_-]/g, "_")
+}
+
+function mcpServerOf(toolName: string, servers: readonly string[]): string | null {
+  /** Return the tool's MCP server (`mcp__<server>__`, else the longest configured `<server>_` prefix), or null. */
+  if (toolName.startsWith(MCP_TOOL_PREFIX)) {
+    return toolName.slice(MCP_TOOL_PREFIX.length).split("__")[0]
+  }
+  let match: string | null = null
+  for (const server of servers) {
+    if (toolName.startsWith(`${server}_`) && (match === null || server.length > match.length)) {
+      match = server
+    }
+  }
+  return match
 }
 
 function findBodyField(args: Record<string, unknown>): [string, string] | null {
@@ -156,11 +263,9 @@ function findBodyField(args: Record<string, unknown>): [string, string] | null {
   return null
 }
 
-function hasNativeAttribution(toolName: string): boolean {
-  /** Return true if the tool provides native AI attribution (e.g. Slack's 'Sent using @Claude'). */
-  return NATIVE_ATTRIBUTION_TOOL_PATTERNS.some((pattern) =>
-    new RegExp(pattern).test(toolName),
-  )
+function hasNativeAttribution(server: string): boolean {
+  /** Return true if the MCP server provides native AI attribution (e.g. Slack's 'Sent using @Claude'). */
+  return NATIVE_ATTRIBUTION_SERVERS.includes(server)
 }
 
 function escapeRegExp(text: string): string {
@@ -168,9 +273,16 @@ function escapeRegExp(text: string): string {
 }
 
 function hasAttribution(text: string, name: string): boolean {
+  /**
+   * One line, any family (ATTRIBUTION_LINE_TEMPLATE in the Python hook): <Family> is
+   * 1-40 characters, no comma or line break; the comma before "reviewed" is optional.
+   */
   const pattern = new RegExp(
-    "(🤖\\s*)?written\\s+by\\s+claude.*reviewed\\s+by\\s+" + escapeRegExp(name),
-    "i",
+    "(?:\\u{1F916}[ \\t]*)?written[ \\t]+by[ \\t]+"
+      + `[^,\\s][^,\\r\\n]{0,${MAX_FAMILY_LENGTH - 1}}?`
+      + "[ \\t]*,?[ \\t]*reviewed[ \\t]+by[ \\t]+"
+      + escapeRegExp(name),
+    "iu",
   )
   return pattern.test(text)
 }
@@ -190,7 +302,7 @@ function findCommitMessages(command: string): string[] {
   const messages: string[] = []
   const pattern = new RegExp(
     "(?:--message\\b|(?:^|[\\s;|&])-{1,2}[\\w-]*m\\b)\\s*([\"'])(.*?)\\1",
-    "is",
+    "gis",
   )
   for (const match of command.matchAll(pattern)) {
     messages.push(match[2])
@@ -203,7 +315,7 @@ function findCommitMessageFiles(command: string): string[] {
   const files: string[] = []
   const pattern = new RegExp(
     "(?:--file\\b|(?:^|[\\s;|&])-{1,2}[\\w-]*F\\b)\\s*(\\S+)",
-    "i",
+    "gi",
   )
   for (const match of command.matchAll(pattern)) {
     files.push(match[1].replace(/^["']|["']$/g, ""))
@@ -234,31 +346,30 @@ function hasAiTrailer(messages: string[]): boolean {
   return false
 }
 
-// Per-session Claude-model flag. Updated by chat.params on each model call;
-// checked by tool.execute.before to skip enforcement for non-Claude LLMs
-// (the attribution line literally claims "Written by Claude").
-const sessionIsClaude = new Map<string, boolean>()
+export const AiAttributionPlugin: Plugin = async ({ client }) => {
+  // Sanitized names of the configured MCP servers, from the config hook.
+  let mcpServers: string[] = []
+  // Model family per session, from chat.params; dropped on session.deleted.
+  const sessionFamilies = new Map<string, string>()
 
-function isClaudeSession(sessionID: string): boolean {
-  return sessionIsClaude.get(sessionID) === true
-}
-
-export const ClaudeAttributionPlugin: Plugin = async ({ client }) => {
   return {
+    config: async (cfg) => {
+      mcpServers = Object.keys(cfg.mcp ?? {}).map(sanitizeMcpName)
+    },
+
     "chat.params": async (input) => {
-      // Anthropic provider + claude model family = Claude LLM
-      sessionIsClaude.set(
-        input.sessionID,
-        input.model.providerID === "anthropic" &&
-          input.model.modelID.toLowerCase().includes("claude"),
-      )
+      sessionFamilies.set(input.sessionID, modelFamily(input.model))
+    },
+
+    event: async ({ event }) => {
+      if (event.type === "session.deleted") {
+        sessionFamilies.delete(event.properties.info.id)
+      }
     },
 
     "tool.execute.before": async (input, output) => {
-      // Plugin is Claude-only — skip enforcement for other LLMs.
-      if (!isClaudeSession(input.sessionID)) return
-
       const args = (output.args ?? {}) as Record<string, unknown>
+      const family = sessionFamilies.get(input.sessionID) ?? DEFAULT_FAMILY
 
       // --- Bash: commit-quality check, then posting-command checks ---
       if (input.tool === "bash") {
@@ -287,12 +398,12 @@ export const ClaudeAttributionPlugin: Plugin = async ({ client }) => {
           throw new Error(SETUP_MESSAGE)
         }
         if (!hasAttribution(command, name)) {
-          throw new Error(MISSING_MESSAGE(name))
+          throw new Error(MISSING_MESSAGE(family, name))
         }
 
         await client.app.log({
           body: {
-            service: "opencode-claude-attribution",
+            service: "ai-attribution",
             level: "info",
             message: `Bash posting command allowed with attribution`,
           },
@@ -300,12 +411,13 @@ export const ClaudeAttributionPlugin: Plugin = async ({ client }) => {
         return
       }
 
-      // --- MCP tools: dynamic body field detection ---
-      if (!input.tool.startsWith("mcp__")) return
+      // --- MCP tools: configured servers (or mcp__*), dynamic body field detection ---
+      const server = mcpServerOf(input.tool, mcpServers)
+      if (server === null) return
 
       // Some MCP servers (e.g. Slack) provide native AI attribution.
       // Skip the text attribution check for those tools.
-      if (hasNativeAttribution(input.tool)) return
+      if (hasNativeAttribution(server)) return
 
       const result = findBodyField(args)
       if (result === null) return
@@ -323,12 +435,12 @@ export const ClaudeAttributionPlugin: Plugin = async ({ client }) => {
       }
 
       if (!hasAttribution(bodyText, name)) {
-        throw new Error(MISSING_MESSAGE(name))
+        throw new Error(MISSING_MESSAGE(family, name))
       }
 
       await client.app.log({
         body: {
-          service: "opencode-claude-attribution",
+          service: "ai-attribution",
           level: "info",
           message: `MCP post allowed with attribution (${input.tool})`,
         },
