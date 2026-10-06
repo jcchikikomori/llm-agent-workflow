@@ -31,7 +31,9 @@
     "submodules": "approval"
   },
   "legacy": [
-    { "path": "agents/opencode-gh-issue-to-pr.md", "plugin": "gh-issue-to-pr" }
+    { "path": "agents/opencode-gh-issue-to-pr.md", "plugin": "gh-issue-to-pr" },
+    { "path": "plugins/opencode-claude-attribution.ts", "plugin": "ai-attribution" },
+    { "path": "commands/claude-attribution.md", "plugin": "ai-attribution" }
   ],
   "hand_written_agent_prefix": "opencode-"
 }

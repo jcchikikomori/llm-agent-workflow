@@ -575,13 +575,13 @@ class PluginNameTests(PlanTestCase):
 
     # AC-055 (alias half, pushed down from the E2E)
     def test_an_id_passes_silently_and_a_dir_name_resolves_to_its_id_with_one_warn(self):
-        # Task 3.1 renames claude-attribution to ai-attribution; the dir stays plugin-attribution.
+        # The ai-attribution id lives in plugin-attribution/, so `attribution` is its dir-derived alias.
         cases = {
             "an id": (("commit-guard",), {"commit-guard"}, ""),
             "two ids": (("token-saver", "commit-guard"), {"commit-guard", "token-saver"}, ""),
-            "a dir-derived name": (("attribution",), {"claude-attribution"}, "WARN: use claude-attribution\n"),
-            "that name twice and its id": (("attribution", "attribution", "claude-attribution"),
-                                           {"claude-attribution"}, "WARN: use claude-attribution\n"),
+            "a dir-derived name": (("attribution",), {"ai-attribution"}, "WARN: use ai-attribution\n"),
+            "that name twice and its id": (("attribution", "attribution", "ai-attribution"),
+                                           {"ai-attribution"}, "WARN: use ai-attribution\n"),
         }
         for name, (names, ids, stderr) in cases.items():
             with self.subTest(name):
@@ -613,9 +613,8 @@ class PluginNameTests(PlanTestCase):
                 self.assertTrue(rows)
 
     def test_a_name_that_names_no_listed_plugin_exits_2_naming_the_plugin_ids(self):
-        # Task 3.1 renames claude-attribution to ai-attribution.
-        real_ids = ("claude-attribution, commit-guard, dev, env-guard, gh-issue-to-pr, markdown-format, markdown-lsp, "
-                    "memory-guard, mempalace-docker, qa, ruby-lsp, token-saver, wandavision")
+        real_ids = ("ai-attribution, commit-guard, dev, env-guard, gh-issue-to-pr, markdown-format, markdown-lsp, "
+                    "memory-guard, mempalace-docker, qa, resource-guard, ruby-lsp, token-saver, wandavision")
 
         def migrate_dir(sandbox):
             repo = make_fixture_repo(sandbox, ("plugin-commit-guard",), ())

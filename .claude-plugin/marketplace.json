@@ -67,9 +67,9 @@
       "homepage": "https://github.com/JuliusBrussee/caveman"
     },
     {
-      "name": "claude-attribution",
+      "name": "ai-attribution",
       "source": "./plugin-attribution",
-      "description": "Anti-AI-slop + attribution governance \u2014 enforces '\ud83e\udd16 Written by Claude, reviewed by <user>' on external posts, blocks AI-slop filler phrases, and blocks AI trailers in git commit messages",
+      "description": "Anti-AI-slop + attribution governance \u2014 enforces '\ud83e\udd16 Written by <Family>, reviewed by <user>' on external posts (Claude on Claude Code, the model family in use on opencode), blocks AI-slop filler phrases, and blocks AI trailers in git commit messages",
       "category": "governance"
     },
     {

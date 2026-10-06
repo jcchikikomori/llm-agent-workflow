@@ -13,8 +13,8 @@ Each test runs the real installer in a subprocess:
 with HOME pointing at a tempdir, an isolated PATH, a stub skills-md converter,
 and real git. A body stays a skipTest until its slice lands, so the suite
 stays green; RepositoryGuardTests are real since Task 1.3a,
-InstallerCoreJourneyTests since Task 1.3b and TrackerJourneyTests since Task
-1.3c.
+InstallerCoreJourneyTests since Task 1.3b, TrackerJourneyTests since Task 1.3c
+and LegacyMigrationTests since Task 3.1.
 
   python3 -m unittest discover -s scripts/opencode/tests
 """
@@ -36,9 +36,10 @@ TRACKER_NAME = ".opencode-setup-tracker"
 DOTFILES_CLEAN_ORIGIN = "https://example.invalid/dotfiles.git"
 CREDENTIALS = "user:token@"
 PAYLOAD_NAMESPACE = "llm-agent-workflow"
-# AC-001's ids. Task 3.1 renames claude-attribution to ai-attribution.
-LISTED_IDS = {"claude-attribution", "commit-guard", "env-guard", "markdown-format", "memory-guard", "token-saver",
-              "wandavision", "gh-issue-to-pr", "ruby-lsp", "markdown-lsp", "mempalace-docker", "dev", "qa"}
+# AC-001's ids (plugin.json names; ai-attribution since Task 3.1).
+LISTED_IDS = {"ai-attribution", "commit-guard", "env-guard", "markdown-format", "memory-guard", "token-saver",
+              "wandavision", "gh-issue-to-pr", "ruby-lsp", "markdown-lsp", "mempalace-docker", "dev", "qa",
+              "resource-guard"}
 LIST_KINDS = {"plugins", "agents", "commands", "skills", "payload", "config"}
 PAYLOAD_PLUGINS = {"commit-guard", "memory-guard", "markdown-format", "token-saver", "ruby-lsp", "markdown-lsp",
                    "mempalace-docker", "qa"}
@@ -72,6 +73,17 @@ V1_TRACKER_HEADER = ("# setup-opencode.sh tracker v1", "# installed_at: 2026-01-
 INSTALLED_AT = r"\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\Z"
 BACKUP_STAMP = r"\A\d{8}T\d{6}Z\Z"
 KEPT_WARNING = "tracker: realpath outside the scope (kept)"
+# LegacyMigrationTests: the ai-attribution and gh-issue-to-pr units, and the paths their 1.x releases installed
+# (mapping.json `legacy`). `attribution` is the dir-derived alias of the ai-attribution id (AC-055).
+ALIAS_WARN = "WARN: use ai-attribution"
+ATTRIBUTION_TS = "plugins/opencode-ai-attribution.ts"
+ATTRIBUTION_COMMAND = "commands/ai-attribution.md"
+GH_AGENT = "agents/gh-issue-to-pr.md"
+GH_COMMAND = "commands/gh-issue-to-pr.md"
+LEGACY_ATTRIBUTION_TS = "plugins/opencode-claude-attribution.ts"
+LEGACY_ATTRIBUTION_COMMAND = "commands/claude-attribution.md"
+LEGACY_GH_AGENT = "agents/opencode-gh-issue-to-pr.md"
+LEGACY_TEXT = "installed by a 1.x release\n"
 
 # Harness (to implement; Design Doc "Test Strategy > Conventions" and "Mock Boundary Decisions"):
 # - One sandbox per test: tempfile.TemporaryDirectory() holding home/, project/, bin/, fixtures/.
@@ -201,7 +213,7 @@ class InstallerCoreJourneyTests(unittest.TestCase):
     # When: (1) --list; (2) --project <p> --dry-run; (3) --global --dry-run; (4) --project <p>.
     # Then: the dry-runs change nothing and name every unit, and the real install writes exactly the listed units.
     # Verification items:
-    #   - (1) exit 0; the PLUGIN column holds exactly the 13 ids above; one row has SOURCE
+    #   - (1) exit 0; the PLUGIN column holds exactly the 14 ids above; one row has SOURCE
     #     wandavision/opencode-plugin/opencode-wandavision.ts; no row mentions opencode-migrate; every KIND is one of
     #     plugins, agents, commands, skills, payload, config.
     #   - (2) and (3) exit 0; snapshot() of every scope realpath, including the files behind the symlinks in the
@@ -382,7 +394,67 @@ class LegacyMigrationTests(unittest.TestCase):
     # @real-dependency: git, filesystem (symlinks)
     # @complexity: medium
     def test_rerun_with_old_plugin_name_removes_tracked_legacy_files_only(self):
-        self.skipTest("skeleton: AC-010, AC-043, AC-055")
+        sandbox = Sandbox()
+        self.addCleanup(sandbox.cleanup)
+        _superproject, dotfiles = sandbox.make_dotfiles_submodule()
+        dotfiles_scope = dotfiles / ".config" / "opencode"
+        scope = link_scope(sandbox.home / ".config" / "opencode", plugins=dotfiles_scope / "plugins",
+                           agents=dotfiles_scope / "agents")
+        tracked = {LEGACY_ATTRIBUTION_TS: "claude-attribution", LEGACY_GH_AGENT: "gh-issue-to-pr"}
+        legacy_files = {target_rel: write(scope / target_rel, LEGACY_TEXT) for target_rel in tracked}
+        untracked = write(scope / LEGACY_ATTRIBUTION_COMMAND, USER_TEXT)
+        write(scope / TRACKER_NAME, self.v2_tracker(scope, dotfiles, tracked))
+        repo_note = f"(repo: {dotfiles} {DOTFILES_CLEAN_ORIGIN})"
+        new_agent = dotfiles_scope / "agents" / "gh-issue-to-pr.md"
+        ts_source = REPO_ROOT / "plugin-attribution" / "plugins" / "opencode-ai-attribution.ts"
+
+        rerun = run_setup("--global", "--plugin", "attribution", "--plugin", "gh-issue-to-pr", "--allow-repo",
+                          dotfiles, sandbox=sandbox)
+
+        self.assertEqual(rerun.returncode, EXIT_OK, rerun.stdout + rerun.stderr)
+        self.assertEqual(rerun.stderr, f"{ALIAS_WARN}\n")
+        lines = rerun.stdout.splitlines()
+        self.assertEqual(sorted(label_lines(rerun, "[REMOVED-LEGACY]")),
+                         sorted(f"[REMOVED-LEGACY] {target_rel} {repo_note}" for target_rel in tracked))
+        self.assertEqual([target_rel for target_rel, path in legacy_files.items() if os.path.lexists(path)], [])
+        self.assertEqual(label_lines(rerun, "[LEGACY-UNTRACKED]"),
+                         [f"[LEGACY-UNTRACKED] {LEGACY_ATTRIBUTION_COMMAND}"])
+        self.assertEqual(untracked.read_text(), USER_TEXT)
+        for line in (f"[OK] {ATTRIBUTION_TS} {repo_note}", f"[OK] {ATTRIBUTION_COMMAND}",
+                     f"[OK] {GH_AGENT} {repo_note}", f"[OK] {GH_COMMAND}"):
+            self.assertIn(line, lines)
+        self.assertEqual((scope / ATTRIBUTION_TS).read_bytes(), ts_source.read_bytes())
+        self.assertTrue(new_agent.is_file())
+        self.assertNotIn("AskUserQuestion", new_agent.read_text())
+        self.assertNotIn('"gh-issue-to-pr": {', rerun.stdout)
+        self.assertIn("  removed:  2", lines)
+        _lines, header, rows = tracker_parts(scope)
+        self.assertEqual(sorted((fields[1], fields[2]) for fields in rows), [
+            ("ai-attribution", ATTRIBUTION_COMMAND), ("ai-attribution", ATTRIBUTION_TS),
+            ("gh-issue-to-pr", GH_AGENT), ("gh-issue-to-pr", GH_COMMAND)])
+        self.assertEqual(header["allowed_repos"], str(dotfiles))
+        tracker_after_rerun = (scope / TRACKER_NAME).read_text()
+
+        dry_run = run_setup("--global", "--plugin", "ai-attribution", "--dry-run", sandbox=sandbox)
+
+        self.assertEqual((dry_run.returncode, dry_run.stderr), (EXIT_OK, ""), dry_run.stdout)
+        self.assertIn(f"[DRY-RUN] SAME {ATTRIBUTION_TS} ok {repo_note}", dry_run.stdout.splitlines())
+        self.assertEqual(label_lines(dry_run, "[LEGACY-UNTRACKED]"),
+                         [f"[LEGACY-UNTRACKED] {LEGACY_ATTRIBUTION_COMMAND}"])
+        self.assertEqual(untracked.read_text(), USER_TEXT)
+        self.assertEqual((scope / TRACKER_NAME).read_text(), tracker_after_rerun)
+        for result in (rerun, dry_run):
+            self.assertNotIn(CREDENTIALS, result.stdout + result.stderr)
+
+    def v2_tracker(self, scope, dotfiles, tracked):
+        """A v2 tracker for SCOPE with one row per TRACKED ({target_rel: plugin}) file, at its realpath in DOTFILES."""
+        header = (TRACKER_V2_MAGIC, "# installed_at: 2026-01-02T03:04:05Z", "# repo_root: /srv/llm-agent-workflow",
+                  "# scope: global", f"# scope_root: {scope}", f"# payload_root: {PAYLOAD_NAMESPACE}",
+                  "# recipe_policy:", "# mcp_aliases:", "# allowed_repos:", "# skills_md:",
+                  f"# columns: {TRACKER_COLUMNS}")
+        rows = [row("file", plugin, target_rel, os.path.realpath(scope / target_rel), sha256_of(scope / target_rel),
+                    str(dotfiles)) for target_rel, plugin in sorted(tracked.items())]
+        return "".join(f"{line}\n" for line in (*header, *rows))
 
 
 class TrackerJourneyTests(unittest.TestCase):

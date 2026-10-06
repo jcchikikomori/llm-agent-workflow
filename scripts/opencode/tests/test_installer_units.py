@@ -55,13 +55,13 @@ SOURCES = {
     GH_COMMAND_REL: REPO_ROOT / "plugin-gh-issue-to-pr" / "commands" / "gh-issue-to-pr.md",
 }
 USER_TEXT = "the user's own file\n"
-# Task 3.1 renames claude-attribution to ai-attribution; its dir stays plugin-attribution (the dir-derived name).
-ATTRIBUTION_ID = "claude-attribution"
-ATTRIBUTION_TS = "plugins/opencode-claude-attribution.ts"
-ATTRIBUTION_COMMAND = "commands/claude-attribution.md"
+# The ai-attribution id lives in plugin-attribution/, so `attribution` is its dir-derived alias.
+ATTRIBUTION_ID = "ai-attribution"
+ATTRIBUTION_TS = "plugins/opencode-ai-attribution.ts"
+ATTRIBUTION_COMMAND = "commands/ai-attribution.md"
 ALIAS_WARN = f"WARN: use {ATTRIBUTION_ID}"
-REAL_IDS = ("claude-attribution, commit-guard, dev, env-guard, gh-issue-to-pr, markdown-format, markdown-lsp, "
-            "memory-guard, mempalace-docker, qa, ruby-lsp, token-saver, wandavision")
+REAL_IDS = ("ai-attribution, commit-guard, dev, env-guard, gh-issue-to-pr, markdown-format, markdown-lsp, "
+            "memory-guard, mempalace-docker, qa, resource-guard, ruby-lsp, token-saver, wandavision")
 V1_TRACKER_HEADER = ("# setup-opencode.sh tracker v1", "# installed_at: 2026-01-02T03:04:05Z",
                      "# repo_root: /srv/llm-agent-workflow", "# scope: project")
 
@@ -1140,9 +1140,9 @@ class PluginSelectionTests(InstallerTestCase):
         self.assertEqual(result.stderr, f"{ALIAS_WARN}\n")
         self.assertEqual([line.split(None, 2) for line in self.lines(result)], [
             ["PLUGIN", "KIND", "SOURCE"],
-            [ATTRIBUTION_ID, "plugins", "plugin-attribution/plugins/opencode-claude-attribution.ts"],
-            [ATTRIBUTION_ID, "skills", "plugin-attribution/skills/claude-attribution"],
-            [ATTRIBUTION_ID, "commands", "plugin-attribution/commands/claude-attribution.md"],
+            [ATTRIBUTION_ID, "plugins", "plugin-attribution/plugins/opencode-ai-attribution.ts"],
+            [ATTRIBUTION_ID, "skills", "plugin-attribution/skills/ai-attribution"],
+            [ATTRIBUTION_ID, "commands", "plugin-attribution/commands/ai-attribution.md"],
         ])
 
     def test_an_unknown_plugin_name_dies_before_anything_is_written(self):

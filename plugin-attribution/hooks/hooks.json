@@ -1,5 +1,5 @@
 {
-  "description": "Anti-AI-slop + attribution governance: enforces '🤖 Written by Claude, reviewed by <user>' on external posts, blocks slop filler, and blocks AI trailers in git commit messages",
+  "description": "Anti-AI-slop + attribution governance: enforces '🤖 Written by <Family>, reviewed by <user>' on external posts (Claude on Claude Code), blocks slop filler, and blocks AI trailers in git commit messages",
   "hooks": {
     "PreToolUse": [
       {

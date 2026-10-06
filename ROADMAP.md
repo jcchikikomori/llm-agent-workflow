@@ -4,7 +4,7 @@ This fork is porting its plugins to [opencode](https://opencode.ai), so the same
 work in both Claude Code and opencode. The work happens on the `feature/port-to-opencode` branch. Each phase lands as
 its own commit, and this file is updated in each one.
 
-Last updated: 2026-10-01.
+Last updated: 2026-10-06.
 
 ## Status at a glance
 
@@ -13,7 +13,7 @@ Last updated: 2026-10-01.
 | 0 | Test harness for the installer and the ports | Done |
 | 1 | Installer core, and payload resolution for the existing ports | Done |
 | 2 | Legacy file cleanup and the gh-issue-to-pr agent | Done |
-| 3 | `claude-attribution` becomes `ai-attribution` | Planned |
+| 3 | `claude-attribution` becomes `ai-attribution` | Done |
 | 4 | Skill pipeline | Planned |
 | 5 | Config snippets, `--merge`, and the LSP and MemPalace ports | Planned |
 | 6 | dev and qa agents, recipes and commands | Planned |
@@ -43,6 +43,7 @@ This is the target state. A plugin counts as supported only when its phase is do
 | `markdown-lsp` | Full | `lsp` config snippet for rumdl | 5 |
 | `ruby-lsp` | Full | `lsp` config snippet, plus a TS plugin for Reek advice | 5 |
 | `mempalace-docker` | Partial | MCP server, auto-mine and compaction context. The Stop and SessionEnd save hooks don't port | 5 |
+| `resource-guard` | To be decided | Added to the repo after this plan was written. Its port needs its own design first; the installer already lists it | 5 |
 | `dev` | Full | Agents converted at install time; recipes install as a skill and a command | 6 |
 | `qa` | Full | Same as `dev`; `web-qa-reviewer` needs a `chrome-devtools` MCP server | 6 |
 | `skills` (skills-md) | Full | Installed per skill by `setup-opencode.sh --with-skills-md` | 7 |
@@ -88,7 +89,7 @@ This is the target state. A plugin counts as supported only when its phase is do
 
 ### Phase 3: ai-attribution
 
-- [ ] 3.1 Rename `claude-attribution` to `ai-attribution`, with a model-aware attribution line
+- [x] 3.1 Rename `claude-attribution` to `ai-attribution`, with a model-aware attribution line
 
 ### Phase 4: skill pipeline
 
@@ -103,6 +104,7 @@ This is the target state. A plugin counts as supported only when its phase is do
 - [ ] 5.2 `markdown-lsp` snippet
 - [ ] 5.3 `ruby-lsp` port with Reek advice
 - [ ] 5.4 `mempalace-docker` partial port
+- [ ] 5.5 `resource-guard` port (design first; added 2026-10-06)
 
 ### Phase 6: dev and qa
 
@@ -140,7 +142,7 @@ wrong place asks once more. The `memory-guard` changelog explains how to copy th
 On Claude Code, reinstall the plugin under its new name:
 
 ```console
-/plugin uninstall claude-attribution
+/plugin uninstall claude-attribution@llm-agent-workflow
 /plugin install ai-attribution@llm-agent-workflow
 ```
 

@@ -155,6 +155,10 @@ class HasAttributionTests(unittest.TestCase):
         body = "🤖 Written by\nClaude, reviewed by Jane Reviewer"
         self.assertFalse(hook.has_attribution(body, NAME))
 
+    def test_attribution_fail_family_split_across_lines(self):
+        body = "🤖 Written by Cla\nude, reviewed by Jane Reviewer"
+        self.assertFalse(hook.has_attribution(body, NAME))
+
 
 class BlockMessageTests(unittest.TestCase):
     MESSAGES = ("SETUP_MESSAGE", "MISSING_MESSAGE", "SLOP_MESSAGE", "COMMIT_TRAILER_MESSAGE")

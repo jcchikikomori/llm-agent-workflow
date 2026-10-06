@@ -21,10 +21,10 @@ EXIT_OK = 0
 EXIT_FATAL = 1
 EXIT_USAGE = 2
 
-# Every plugin.json id except opencode-migrate (exclude_plugins). ai-attribution is claude-attribution until 3.1.
+# Every plugin.json id except opencode-migrate (exclude_plugins).
 PORT_TARGETS = {
-    "claude-attribution", "commit-guard", "env-guard", "markdown-format", "memory-guard", "token-saver",
-    "wandavision", "gh-issue-to-pr", "ruby-lsp", "markdown-lsp", "mempalace-docker", "dev", "qa",
+    "ai-attribution", "commit-guard", "env-guard", "markdown-format", "memory-guard", "token-saver",
+    "wandavision", "gh-issue-to-pr", "ruby-lsp", "markdown-lsp", "mempalace-docker", "dev", "qa", "resource-guard",
 }
 KINDS = ("payload", "plugins", "skills", "agents", "commands", "config")
 PAYLOAD_IDS = {"commit-guard", "memory-guard", "markdown-format", "token-saver", "ruby-lsp", "markdown-lsp",
@@ -167,9 +167,8 @@ class ListTests(unittest.TestCase):
         ])
 
     def test_commands_and_ts_plugins_come_from_the_plugin_dirs(self):
-        self.assertIn(["claude-attribution", "commands", "plugin-attribution/commands/claude-attribution.md"],
-                      self.rows)
-        self.assertIn(["claude-attribution", "plugins", "plugin-attribution/plugins/opencode-claude-attribution.ts"],
+        self.assertIn(["ai-attribution", "commands", "plugin-attribution/commands/ai-attribution.md"], self.rows)
+        self.assertIn(["ai-attribution", "plugins", "plugin-attribution/plugins/opencode-ai-attribution.ts"],
                       self.rows)
 
 
