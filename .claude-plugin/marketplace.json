@@ -123,7 +123,7 @@
     {
       "name": "ruby-lsp",
       "source": "./plugin-ruby-lsp",
-      "description": "Ruby/Rails code intelligence \u2014 ruby-lsp pushes RuboCop diagnostics after every edit, a hook adds advisory Reek smells, Docker-first with host fallback",
+      "description": "Ruby/Rails code intelligence \u2014 ruby-lsp pushes RuboCop diagnostics after every edit, a hook adds advisory Reek smells. One shared ruby-lsp per checkout starts on the first Ruby write and stops when idle, Docker-first with host fallback",
       "category": "quality-enforcement"
     },
     {

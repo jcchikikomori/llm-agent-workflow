@@ -11,11 +11,15 @@ picked without touching a real Docker daemon or Ruby install.
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 WRAPPER = Path(__file__).resolve().parents[1] / "scripts" / "run-ruby-tool.sh"
+sys.path.insert(0, str(WRAPPER.parent))
+
+import lsp_hub  # noqa: E402
 
 LOCKFILE = """GEM
   remote: https://rubygems.org/
@@ -32,6 +36,7 @@ DOCKER_STUB = """#!/usr/bin/env bash
 if [ "$1" = compose ] && [ "$2" = version ]; then exit "${STUB_COMPOSE_EXIT:-0}"; fi
 if [ "$1" = info ]; then exit "${STUB_INFO_EXIT:-0}"; fi
 if [ "$1" = compose ] && [ "$2" = config ]; then printf '%b' "${STUB_SERVICES:-db\\nweb\\n}"; exit 0; fi
+if [ "$1" = inspect ]; then [ -n "${STUB_RUNNING:-}" ] || exit 1; printf '%s\\n' "$STUB_RUNNING"; exit 0; fi
 printf 'docker %s\\n' "$*" >> "$STUB_LOG"
 """
 
@@ -101,9 +106,46 @@ class WrapperTests(unittest.TestCase):
         self.assertIn(f"-w {self.project} ", call)
         self.assertTrue(call.endswith("web bundle exec reek --format json app/models/a.rb"))
 
-    def test_lsp_mode_maps_to_ruby_lsp(self):
+    def test_lsp_mode_execs_the_bridge(self):
+        self.stub("python3", RECORD_STUB.format(name="python3"))
         self.run_wrapper("lsp")
-        self.assertTrue(self.calls().endswith("web bundle exec ruby-lsp"))
+        self.assertEqual(self.calls(), "python3 /plugin/root/scripts/lsp_bridge.py")
+
+    def test_lsp_backend_maps_to_ruby_lsp(self):
+        self.run_wrapper("lsp-backend")
+        call = self.calls()
+        self.assertTrue(call.startswith("docker compose run --rm --no-deps -T -e "), call)
+        self.assertTrue(call.endswith("web bundle exec ruby-lsp"))
+
+    def test_lsp_backend_names_the_hub_container(self):
+        self.run_wrapper("lsp-backend", RUBY_LSP_PLUGIN_HUB_CONTAINER="ruby-lsp-abc")
+        remove, run = self.calls().splitlines()
+        self.assertEqual(remove, "docker rm -f ruby-lsp-abc")
+        self.assertTrue(run.startswith("docker compose run --rm --no-deps -T --name ruby-lsp-abc -e "), run)
+        self.assertTrue(run.endswith("web bundle exec ruby-lsp"))
+
+    def test_reek_reuses_the_running_hub_container(self):
+        # The bash key and lsp_hub.container_name() must agree, or Reek never finds the container.
+        container = lsp_hub.container_name(str(self.project))
+        self.run_wrapper("reek", "--format", "json", "a.rb", STUB_RUNNING=f"true {self.project} /plugin/root ")
+        self.assertEqual(self.calls(), f"docker exec -w {self.project} {container} bundle exec reek --format json a.rb")
+
+    def test_reek_reuse_matches_plugin_root_as_first_mount(self):
+        self.run_wrapper("reek", STUB_RUNNING="true /plugin/root ")
+        self.assertTrue(self.calls().startswith("docker exec "))
+
+    def test_reek_skips_a_stopped_hub_container(self):
+        self.run_wrapper("reek", STUB_RUNNING="false /plugin/root ")
+        self.assertTrue(self.calls().startswith("docker compose run "))
+
+    def test_reek_skips_a_container_from_another_plugin_version(self):
+        # The bundled .reek.yml lives under the plugin root, so it must be mounted.
+        self.run_wrapper("reek", STUB_RUNNING="true /plugin/root-0.1.0 ")
+        self.assertTrue(self.calls().startswith("docker compose run "))
+
+    def test_force_host_skips_the_hub_container(self):
+        self.run_wrapper("reek", STUB_RUNNING="true /plugin/root ", RUBY_LSP_PLUGIN_FORCE_HOST="1")
+        self.assertEqual(self.calls(), "bundle exec reek")
 
     def test_service_override(self):
         self.run_wrapper("reek", RUBY_LSP_PLUGIN_SERVICE="worker")

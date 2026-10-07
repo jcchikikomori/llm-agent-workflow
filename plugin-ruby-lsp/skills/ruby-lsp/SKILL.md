@@ -37,12 +37,15 @@ When the repo's own `.rubocop.yml` or `.reek.yml` disagrees with this list, the 
 
 ## When nothing comes back
 
-No diagnostics can mean either of these:
+No diagnostics can mean one of these:
 
-- the code is clean, or
+- the code is clean.
 - the server is not running. The usual causes are a missing gem, a Docker daemon that is down, or the first `.ruby-lsp/` bundle build still in progress.
+- the server is cold. ruby-lsp stops after 15 idle minutes and starts again on the next Ruby write, so that write's
+  diagnostics can arrive a turn late. Don't run `rubocop` by hand to fill the gap; the diagnostics follow.
 
-If you expected an offense and got none, say so. Point the user at `claude --debug` and the `[ruby-lsp]` stderr lines instead of assuming the code is clean.
+If you expected an offense and got none, say so. Point the user at `claude --debug`, the `[ruby-lsp]` stderr lines and
+`~/.claude/.ruby-lsp-plugin/hubs/*/hub.log` instead of assuming the code is clean.
 
 ## Conflicts
 

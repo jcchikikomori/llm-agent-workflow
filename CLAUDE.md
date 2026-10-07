@@ -278,6 +278,19 @@ Shared rules:
 - Docker is used only when the gem is in `Gemfile.lock`, because a container cannot `bundle exec` a gem that is missing from its bundle.
 - Overrides: `RUBY_LSP_PLUGIN_SERVICE`, `RUBY_LSP_PLUGIN_FORCE_HOST`, `RUBY_LSP_PLUGIN_FORCE_DOCKER`. The prefix avoids ruby-lsp's own `RUBY_LSP_*` variables.
 - The bundled `config/.reek.yml` is a Rails-tuned fallback, used only when the project has no Reek config.
+- **One shared ruby-lsp per checkout (0.2.0).** `run-ruby-tool.sh lsp` execs `scripts/lsp_bridge.py`, a per-session
+  byte pump that Claude Code keeps for the whole session (it treats any LSP exit as a crash). The bridge connects to
+  `scripts/lsp_hub.py`, a detached, flock-singleton hub per checkout (state in `~/.claude/.ruby-lsp-plugin/hubs/<key>/`,
+  key `sha256(realpath(cwd))[:12]`, `CLAUDE_*` stripped so resource-guard never freezes it).
+- The hub answers `initialize` from a capabilities cache and starts the backend (`run-ruby-tool.sh lsp-backend`,
+  container `ruby-lsp-<key>`) on the first document notification or request. Claude Code sends those only for Write,
+  Edit and the LSP tool, never for a plain Read. It stops the backend after `RUBY_LSP_PLUGIN_IDLE_MINUTES` (default 15)
+  and exits 60 s after its last session. Reek `docker exec`s into the running backend container.
+- `RUBY_LSP_PLUGIN_SHARED=0`, no unix sockets, or a hub that never comes up runs the same hub in-process (solo):
+  lazy and idle-stopping, not shared.
+- ruby-lsp 0.26 serves **pull** diagnostics only (`textDocument/diagnostic`), while Claude Code only reads
+  `publishDiagnostics`. The hub pulls after every document sync and pushes the report; without that, no RuboCop
+  offense reaches Claude.
 
 **Tests:** `python3 -m unittest discover -s plugin-ruby-lsp/tests`
 
@@ -447,7 +460,7 @@ plugin-gh-issue-to-pr/            # gh-issue-to-pr plugin — GitHub issue-to-me
 plugin-memory-guard/              # memory-guard plugin — watch .claude/**, save to memory, offer stash
 plugin-opencode-migrate/          # opencode-migrate plugin — Claude Code -> opencode migration skill
 plugin-mempalace-docker/          # mempalace-docker plugin — one shared Dockerized MemPalace HTTP hub (MCP + CLI + save hooks), GPU-aware
-plugin-ruby-lsp/                  # ruby-lsp plugin — ruby-lsp/RuboCop diagnostics + advisory Reek hook, Docker-first
+plugin-ruby-lsp/                  # ruby-lsp plugin — one shared, idle-stopping ruby-lsp per checkout + advisory Reek hook, Docker-first
 plugin-markdown-lsp/              # markdown-lsp plugin — rumdl LSP diagnostics, skill-derived fallback config, Docker-first
 plugin-resource-guard/            # resource-guard plugin — load gate, freeze/resume of background sessions and containers, WSL-aware
 ```

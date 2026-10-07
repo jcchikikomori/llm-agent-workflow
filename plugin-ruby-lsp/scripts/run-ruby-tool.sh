@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Docker-first, host-fallback launcher for the ruby-lsp plugin.
 #
-#   run-ruby-tool.sh lsp [args...]    -> ruby-lsp (LSP server, JSON-RPC on stdio)
-#   run-ruby-tool.sh reek [args...]   -> reek
+#   run-ruby-tool.sh lsp [args...]          -> lsp_bridge.py: the session's end of the
+#                                             shared, lazy, idle-stopping ruby-lsp hub
+#   run-ruby-tool.sh lsp-backend [args...]  -> ruby-lsp itself (JSON-RPC on stdio);
+#                                             only lsp_hub.py calls this
+#   run-ruby-tool.sh reek [args...]         -> reek
 #
 # Referenced from .lsp.json and hooks/reek_hook.py. The current working
 # directory is treated as the project root.
@@ -23,12 +26,14 @@
 #   RUBY_LSP_PLUGIN_SERVICE=<name>  compose service to run in
 #   RUBY_LSP_PLUGIN_FORCE_HOST=1    skip Docker entirely
 #   RUBY_LSP_PLUGIN_FORCE_DOCKER=1  fail (exit 1) instead of falling back
+#   RUBY_LSP_PLUGIN_HUB_CONTAINER   set by lsp_hub.py: names the lsp-backend
+#                                   container so Reek can reuse it
 set -euo pipefail
 
 log() { printf '[ruby-lsp] %s\n' "$*" >&2; }
 
 usage() {
-  log "usage: run-ruby-tool.sh <lsp|reek> [args...]"
+  log "usage: run-ruby-tool.sh <lsp|lsp-backend|reek> [args...]"
   exit 64
 }
 
@@ -36,14 +41,21 @@ usage() {
 mode="$1"
 shift
 
+project_dir="$PWD"
+plugin_root="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
 case "$mode" in
-  lsp) tool='ruby-lsp' ;;
+  lsp)
+    if command -v python3 >/dev/null 2>&1; then
+      exec python3 "$plugin_root/scripts/lsp_bridge.py" "$@"
+    fi
+    log 'python3 not found, running ruby-lsp directly (not shared, no idle stop)'
+    tool='ruby-lsp'
+    ;;
+  lsp-backend) tool='ruby-lsp' ;;
   reek) tool='reek' ;;
   *) usage ;;
 esac
-
-project_dir="$PWD"
-plugin_root="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 compose_file() {
   local name
@@ -76,6 +88,21 @@ resolve_service() {
   return 1
 }
 
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | cut -d' ' -f1
+  else
+    python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
+  fi
+}
+
+# Must match container_name() in lsp_hub.py: the hub's backend runs under this name.
+hub_container() {
+  printf 'ruby-lsp-%s' "$(printf '%s' "$(pwd -P)" | sha256 | cut -c1-12)"
+}
+
 # Prints the service name when Docker is usable; logs why when it is not.
 docker_service() {
   if [ "${RUBY_LSP_PLUGIN_FORCE_HOST:-}" = '1' ]; then
@@ -104,12 +131,34 @@ docker_service() {
   fi
 }
 
+# Reek reuses the hub's warm ruby-lsp container when one runs for this checkout:
+# no container start per edit. The same bundle serves both gems. The container
+# must also mount this plugin root, where the bundled .reek.yml lives; one
+# started by an older plugin version does not.
+if [ "$mode" = reek ] && [ "${RUBY_LSP_PLUGIN_FORCE_HOST:-}" != '1' ] &&
+  gem_in_lockfile && command -v docker >/dev/null 2>&1; then
+  container="$(hub_container)"
+  state="$(docker inspect -f '{{.State.Running}} {{range .Mounts}}{{.Destination}} {{end}}' "$container" 2>/dev/null || true)"
+  case "$state" in
+    "true"*" $plugin_root "*)
+      log "running reek in the hub's container '$container'"
+      exec docker exec -w "$project_dir" "$container" bundle exec reek "$@"
+      ;;
+  esac
+fi
+
 if service="$(docker_service)"; then
   log "running $tool in compose service '$service'"
+  name_args=()
+  if [ "$mode" = lsp-backend ] && [ -n "${RUBY_LSP_PLUGIN_HUB_CONTAINER:-}" ]; then
+    # A hub that died hard can leave its container behind; free the name first.
+    docker rm -f "$RUBY_LSP_PLUGIN_HUB_CONTAINER" >/dev/null 2>&1 || true
+    name_args=(--name "$RUBY_LSP_PLUGIN_HUB_CONTAINER")
+  fi
   # -T: no TTY, raw stdio stream. stdin stays attached (compose run default).
   # --no-deps: do not boot db/redis just to lint.
   # Identical-path mounts keep LSP file URIs and reek paths valid on the host.
-  exec docker compose run --rm --no-deps -T \
+  exec docker compose run --rm --no-deps -T ${name_args[@]+"${name_args[@]}"} \
     -e RUBYOPT=-W0 \
     -e BUNDLE_GEMFILE="$project_dir/Gemfile" \
     -v "$project_dir:$project_dir" \
