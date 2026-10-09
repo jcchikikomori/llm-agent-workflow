@@ -56,6 +56,7 @@ All three must be kept in sync. Update them together whenever the version change
 - `plugin-ruby-lsp/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 - `plugin-markdown-lsp/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 - `plugin-resource-guard/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
+- `plugin-eta/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 
 ### When to bump versions
 
@@ -130,6 +131,7 @@ This registers the marketplace from the GitHub repo. Claude Code reads `.claude-
 /plugin install ruby-lsp@llm-agent-workflow
 /plugin install markdown-lsp@llm-agent-workflow
 /plugin install resource-guard@llm-agent-workflow
+/plugin install eta@llm-agent-workflow
 /plugin install token-saver@llm-agent-workflow
 /plugin install wandavision@llm-agent-workflow
 
@@ -164,6 +166,7 @@ Always reload after installing, updating, or switching plugins within the same s
 | `ruby-lsp` | quality-enforcement | LSP + hook + skill — ruby-lsp (RuboCop diagnostics after every `.rb` edit), advisory Reek smells via PostToolUse, Docker-first wrapper with host fallback. Install **instead of** the official `ruby-lsp` plugin |
 | `markdown-lsp` | quality-enforcement | LSP + skill — rumdl pushes markdownlint-compatible diagnostics after every `.md`/`.mdx` edit; bundled config mirrors `skills-md:markdown`, project config wins. Docker-first wrapper with native binary, `uvx`, `npx` fallbacks. Complements `markdown-format` |
 | `resource-guard` | behavior-control | Hooks + detached watchdog + CLI — reads memory, swap and PSI stall (plus Windows host memory on WSL2), gates new heavy work from background sessions, freezes their Bash work (SIGSTOP) and shim-labeled Docker containers (`docker pause`) under pressure, and auto-resumes them when load drops. Caps each session's docker MCP/LSP server containers once its shim is on Claude Code's `PATH`. Ships in `observe` freeze mode |
+| `eta` | behavior-control | Mod (function-hook mods API, early access) — times every tool call, keeps the median of the last 7 runs per command, asks Claude for `~3m` hints on long calls, and draws a live ETA band above the prompt for long calls, background shells, agents and workflows; alerts once on an overrun |
 | `token-saver` | behavior-control | Enforces token-efficient prompting and session hygiene |
 | `wandavision` | quality-enforcement | Deterministic image analysis via `mcp-vision` |
 | `metronome` | behavior-control | External — keeps workflows procedural and step-driven |
@@ -333,6 +336,24 @@ Shared rules:
 
 ---
 
+### eta plugin
+
+**Purpose:** Show how far along a long tool call is — elapsed time against an ETA, in a live band above the prompt.
+
+**How it works:**
+
+- **A mod, not command hooks.** `hooks/hooks.json` is `{ "modules": ["./register.tsx"] }`: the engine loads the TypeScript module and runs it in its own sandbox (no Node, no DOM). Logic lives in `hooks/eta.ts`, hook wiring in `hooks/register.tsx`, the `$.state` contract (`eta.running`) in `types/index.d.ts`.
+- **Timer:** `tool.call` times every call (except `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode`, `Monitor`, `ScheduleWakeup`) and files clean runs of 2 s or more in `$.store`: last 7 per signature, 300 signatures, least recently used dropped first.
+- **ETA order:** history (median) wins once a strong key (Bash command, Workflow name) has 2+ runs; otherwise Claude's `~3m` description hint, which wins on weak keys (agent type, MCP and other tools); otherwise any past runs; otherwise "no estimate yet". A `prompt.compose` section asks Claude for the hint on calls likely to pass 30 s.
+- **Band:** an `AbovePrompt` render hook draws up to 4 lines, `▸ label  1:12 / ~3:06  █████░░░░░░░  hist×4` (or `guess`), for runs past 3 s. Background shells, agents and workflows stay on it, marked `(bg)`, until their `<task-notification>` row arrives or the subagent's `turn.complete` fires.
+- **Overrun:** past 150% of the ETA and at least 15 s over, one toast and one desktop notification per run.
+- **Keep the name `eta`.** The folder is `plugin-eta`, but the `$.state` refs and `$.store` history are keyed by the plugin name.
+- **Generated types:** the engine writes `.claude-plugin/types/` when it loads the mod. It is gitignored and must never be committed.
+
+**Tests:** `claude plugin validate plugin-eta` and `claude plugin test plugin-eta` (28 tests). Re-run both after every Claude Code update: the mods API is early access.
+
+---
+
 ## Adding a Custom Plugin
 
 ### Step 1 — Create the plugin directory
@@ -463,6 +484,7 @@ plugin-mempalace-docker/          # mempalace-docker plugin — one shared Docke
 plugin-ruby-lsp/                  # ruby-lsp plugin — one shared, idle-stopping ruby-lsp per checkout + advisory Reek hook, Docker-first
 plugin-markdown-lsp/              # markdown-lsp plugin — rumdl LSP diagnostics, skill-derived fallback config, Docker-first
 plugin-resource-guard/            # resource-guard plugin — load gate, freeze/resume of background sessions and containers, WSL-aware
+plugin-eta/                       # eta plugin — mod (TypeScript hooks module) drawing a live ETA band above the prompt
 ```
 
 Each plugin owns its agents and skills directly — no shared root directories, no symlinks. To update an agent or skill, edit it in the plugin directory where it belongs (`plugin-dev/agents/`, `plugin-qa/skills/`, etc.).

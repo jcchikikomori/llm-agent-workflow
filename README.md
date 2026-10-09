@@ -64,6 +64,7 @@ Platform support: macOS, Linux, WSL, native Windows.
 | `ruby-lsp` | quality-enforcement | ruby-lsp + RuboCop diagnostics after every Ruby edit, advisory Reek smells, Docker-first |
 | `markdown-lsp` | quality-enforcement | rumdl LSP diagnostics after every Markdown edit, skill-derived fallback config, Docker-first |
 | `resource-guard` | behavior-control | Gates heavy work under memory pressure, freezes and resumes background sessions' work and containers, caps each session's docker MCP/LSP containers, WSL-aware |
+| `eta` | behavior-control | Live ETA band above the prompt for long tool calls, background shells, agents and workflows, from past-run medians or Claude's `~3m` hint |
 | `wandavision` | quality-enforcement | Deterministic image analysis via `mcp-vision` |
 | `metronome` | behavior-control | Keeps workflows procedural and step-driven |
 | `discover` | product-quality | Turns ideas into evidence-backed PRDs |
@@ -179,6 +180,7 @@ Deep setup and internals live in each plugin README:
 - [`plugin-ruby-lsp/README.md`](plugin-ruby-lsp/README.md)
 - [`plugin-markdown-lsp/README.md`](plugin-markdown-lsp/README.md)
 - [`plugin-resource-guard/README.md`](plugin-resource-guard/README.md)
+- [`plugin-eta/README.md`](plugin-eta/README.md)
 
 ## Recommended Permissions
 

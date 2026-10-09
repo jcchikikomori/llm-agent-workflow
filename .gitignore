@@ -50,3 +50,6 @@ docs/
 
 # rumdl lint cache (markdown-lsp plugin)
 .rumdl_cache/
+
+# Mod type stubs the Claude Code engine writes on load (eta plugin)
+**/.claude-plugin/types/

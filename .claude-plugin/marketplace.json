@@ -137,6 +137,12 @@
       "source": "./plugin-resource-guard",
       "description": "Keeps concurrent Claude Code sessions from hanging the machine \u2014 gates new heavy work under memory pressure, freezes background sessions' Bash work and Docker containers, resumes them when load drops, caps each session's docker MCP/LSP containers; WSL-aware",
       "category": "behavior-control"
+    },
+    {
+      "name": "eta",
+      "source": "./plugin-eta",
+      "description": "Live ETA band above the prompt \u2014 times every tool call, estimates from the median of past runs or Claude's ~3m hint, keeps background shells, agents and workflows on the band until they end, and alerts once on an overrun",
+      "category": "behavior-control"
     }
   ]
 }

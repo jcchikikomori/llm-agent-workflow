@@ -1,0 +1,22 @@
+{
+  "name": "eta",
+  "version": "0.1.0",
+  "description": "Live ETA band above the prompt for long tool calls, background shells, agents and workflows",
+  "author": {
+    "name": "John Cyrill Corsanes",
+    "url": "https://github.com/jcchikikomori"
+  },
+  "homepage": "https://github.com/jcchikikomori/llm-agent-workflow",
+  "repository": "https://github.com/jcchikikomori/llm-agent-workflow.git",
+  "license": "MIT",
+  "keywords": [
+    "eta",
+    "progress",
+    "tool-calls",
+    "background-tasks",
+    "mods",
+    "hooks",
+    "behavior-control"
+  ],
+  "types": "./types/index.d.ts"
+}
