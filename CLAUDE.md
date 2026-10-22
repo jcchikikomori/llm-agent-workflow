@@ -56,6 +56,7 @@ All three must be kept in sync. Update them together whenever the version change
 - `plugin-ruby-lsp/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 - `plugin-markdown-lsp/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 - `plugin-resource-guard/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
+- `plugin-eta/.claude-plugin/plugin.json` — same plain SemVer scheme, original plugin with no upstream counterpart.
 
 ### When to bump versions
 
@@ -147,6 +148,7 @@ This registers the marketplace from the GitHub repo. Claude Code reads `.claude-
 /plugin install ruby-lsp@llm-agent-workflow
 /plugin install markdown-lsp@llm-agent-workflow
 /plugin install resource-guard@llm-agent-workflow
+/plugin install eta@llm-agent-workflow
 /plugin install token-saver@llm-agent-workflow
 /plugin install wandavision@llm-agent-workflow
 
@@ -177,10 +179,11 @@ Always reload after installing, updating, or switching plugins within the same s
 | `gh-issue-to-pr` | workflow-orchestration | Agent that drives a single GitHub issue end-to-end to a merged PR — investigate, plan, branch, implement, test, commit (with confirmation), PR, review, merge, close |
 | `memory-guard` | behavior-control | SessionStart + PostToolUse hooks that watch `.claude/**`, root `CLAUDE.md`, and `docs/ticket-tracking/**` for changes, save them to memory, then remove or stash them per a one-time, per-project preference |
 | `opencode-migrate` | workflow-orchestration | Skill that migrates a Claude Code setup into opencode — global config, one repository, or a Claude Code plugin's own source — behind a plan-then-approve gate |
-| `mempalace-docker` | behavior-control | Runs MemPalace entirely from Docker — MCP server, CLI, and save hooks. Auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one palace in a named volume, mounts the current project, and auto-mines per project. **Replaces** the official `mempalace` plugin |
+| `mempalace-docker` | behavior-control | Runs MemPalace entirely from Docker as one shared HTTP hub — MCP server, CLI, and save hooks all go through a single `mempalace-hub` container. Auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one palace in a named volume, mounts registered projects read-only, stops when idle, and auto-mines per project. **Replaces** the official `mempalace` plugin |
 | `ruby-lsp` | quality-enforcement | LSP + hook + skill — ruby-lsp (RuboCop diagnostics after every `.rb` edit), advisory Reek smells via PostToolUse, Docker-first wrapper with host fallback. Install **instead of** the official `ruby-lsp` plugin |
 | `markdown-lsp` | quality-enforcement | LSP + skill — rumdl pushes markdownlint-compatible diagnostics after every `.md`/`.mdx` edit; bundled config mirrors `skills-md:markdown`, project config wins. Docker-first wrapper with native binary, `uvx`, `npx` fallbacks. Complements `markdown-format` |
 | `resource-guard` | behavior-control | Hooks + detached watchdog + CLI — reads memory, swap and PSI stall (plus Windows host memory on WSL2), gates new heavy work from background sessions, freezes their Bash work (SIGSTOP) and shim-labeled Docker containers (`docker pause`) under pressure, and auto-resumes them when load drops. Caps each session's docker MCP/LSP server containers once its shim is on Claude Code's `PATH`. Ships in `observe` freeze mode |
+| `eta` | behavior-control | Mod (function-hook mods API, early access) — times every tool call, keeps the median of the last 7 runs per command, asks Claude for `~3m` hints on long calls, and draws a live ETA band above the prompt for long calls, background shells, agents and workflows; alerts once on an overrun |
 | `token-saver` | behavior-control | Enforces token-efficient prompting and session hygiene |
 | `wandavision` | quality-enforcement | Deterministic image analysis via `mcp-vision` |
 | `metronome` | behavior-control | External — keeps workflows procedural and step-driven |
@@ -242,21 +245,27 @@ The `dev` and `qa` plugins cover **workflow orchestration** — how to plan, bui
 
 ### mempalace-docker plugin
 
-**Purpose:** Runs MemPalace entirely from Docker — MCP server, CLI, and save hooks — with per-machine GPU selection, one shared palace, and per-project auto-mining. **Replaces** the official `mempalace` plugin; do not run both.
+**Purpose:** Runs MemPalace entirely from Docker as **one shared hub per machine** — MCP server, CLI, and save hooks — with per-machine GPU selection, one shared palace, and per-project auto-mining. **Replaces** the official `mempalace` plugin; do not run both.
 
 **How it works:**
 
-- `.mcp.json` points at `scripts/run-mempalace.sh` (`.mcp.json` cannot hold shell logic). The wrapper picks the image at launch: an explicit `MEMPALACE_DOCKER_IMAGE`, else a locally built `mempalace:gpu` with `--runtime=nvidia --gpus all` when NVIDIA is usable, else `ghcr.io/mempalace/mempalace:latest`. Every fallback logs its reason to **stderr** — stdout is JSON-RPC.
+- **One hub (2.0.0):** `scripts/hub.sh` owns a single `mempalace-hub` container running upstream's `mempalace serve` (HTTP MCP) on `127.0.0.1:8765`. `.mcp.json` is an `http` server whose `headersHelper` (`scripts/hub-headers.sh`) starts the hub if needed and adds the bearer token. Sessions no longer start their own server, and the hub owns the palace writer lease, so hook mines forward to it instead of failing with `held by PID 1`.
+- Image selection (in `hub.sh` via `lib/common.sh`): an explicit `MEMPALACE_DOCKER_IMAGE`, else a locally built `mempalace:gpu` with `--runtime=nvidia --gpus all` when NVIDIA is usable, else `ghcr.io/mempalace/mempalace:latest`. Every fallback logs its reason to **stderr**.
+- **Token:** upstream refuses a non-loopback bind without `MEMPALACE_MCP_HTTP_TOKEN`, and a published port needs `0.0.0.0` inside the container. `hub.sh` mints one token (0600, `~/.claude/.mempalace-docker/hub/token`) and passes it through `--env-file`, never argv.
+- **Lifecycle:** upstream's idle watchdog exits the hub after `MEMPALACE_HUB_IDLE_HOURS` (default 2); the next hook, shim or MCP connect starts it again. `0` means always-on (`--restart unless-stopped`). A config change (registry, image, port, idle hours) changes a fingerprint label: a stopped hub is recreated, a running one is reported, never restarted behind the user's back.
 - **Upstream publishes CPU tags only.** There is no `gpu`/`cuda`/`rocm` tag on GHCR, so `scripts/build-image.sh gpu` builds the CUDA variant from `Dockerfile.gpu` (x86_64-only; `onnxruntime-gpu` has no aarch64 Linux wheels).
 - **AMD detection explains, it does not accelerate.** `rocm-smi` / `rocminfo` / `/dev/kfd` / `/opt/rocm` / `lspci` vendor `1002` (the last one catches integrated APUs). On a hit it logs that upstream ships no ROCm image and runs CPU. No `Dockerfile.rocm` is shipped.
-- **Mounts:** volume `mempalace-data` at `/data`, the current project at `/work:ro`, `~/.claude/projects` at `/transcripts:ro`, plus `~/.claude` and `$PWD` at their *identical* host paths. That last pair exists because the vendored hooks hand the CLI real host paths, while `HOME` stays `/data` so the palace stays in the volume. Decoupling path resolution from `HOME` is what fixes the split-brain palace.
-- **Auto-mine:** a `SessionStart` hook checks a per-project stamp under `~/.claude/.mempalace-docker/projects/` (keyed by `sha256(project_root)[:16]`, holding `head_sha` + `last_mined`) and asks Claude to mine `/work` when the project is unmined, `HEAD` has moved, or the stamp exceeds `MEMPALACE_MINE_MAX_AGE_DAYS` (default 7). The skill adds the lazy half — an empty project search triggers a mine, then one retry.
+- **Mounts:** volume `mempalace-data` at `/data`, `~/.claude/projects` at `/transcripts:ro`, `~/.claude` at its *identical* host path, and every target of the project registry (`${XDG_CONFIG_HOME:-~/.config}/mempalace-docker/projects/`, a directory of symlinks) read-only at its identical host path. There is no `/work` any more: projects are mined by host path. `HOME` stays `/data` so the palace stays in the volume. Decoupling path resolution from `HOME` is what fixes the split-brain palace.
+- **Shims:** `scripts/bin/mempalace` and `mempalace-python3` `docker exec` into the hub instead of starting a container per call. Inside the hub the CLI finds the hub's serverinfo and forwards `mine` over HTTP.
+- **Auto-mine:** a `SessionStart` hook registers the current git checkout (only under `$HOME`, never `$HOME` itself or `~/.claude`), runs `hub.sh ensure --check`, then checks a per-project stamp under `~/.claude/.mempalace-docker/projects/` (keyed by `sha256(project_root)[:16]`, holding `head_sha` + `last_mined`) and asks Claude to mine the project's host path when it is unmined, `HEAD` has moved, or the stamp exceeds `MEMPALACE_MINE_MAX_AGE_DAYS` (default 7). When the running hub was started without that path it asks for `hub.sh restart` instead. The skill adds the lazy half — an empty project search triggers a mine, then one retry.
 - **Conflict scan:** the same hook reports the official plugin, a `mcpServers.mempalace` entry in `~/.claude.json`, `~/.local/bin/mempalace{,-python3}` shims, and stale mempalace hook entries in `settings.json` / `settings.local.json`. It reports; it never edits settings. Silence with `touch ~/.claude/.mempalace-docker/conflicts-dismissed`.
 - **Save hooks:** `Stop` / `PreCompact` / `SessionEnd` run MemPalace's own scripts, vendored **byte-identical** under `hooks/vendor/` and redirected purely via the `MEMPAL_PYTHON` and `PATH` overrides those scripts already support. Keeping them unmodified makes `diff` against upstream a clean equality check — so provenance lives in `NOTICE` and `hooks/vendor/README.md`, not in prepended headers.
 
-**Consolidating a split palace:** `scripts/migrate-host-palace.sh` reports `mempalace status` for both palaces first, backs the volume up to `~/.mempalace-backups/`, then either `--strategy remine` (default, additive) or `--strategy replace`. It never deletes `~/.mempalace`. Re-mining rather than merging is forced by upstream: the CLI has no export/import/merge verb, and a Chroma collection plus `knowledge_graph.sqlite3` does not union by copying files.
+**Consolidating a split palace:** `scripts/migrate-host-palace.sh` reports `mempalace status` for both palaces first, backs the volume up to `~/.mempalace-backups/`, then either `--strategy remine` (default, additive, run through the hub) or `--strategy replace` (stops the hub around the copy). It never deletes `~/.mempalace`. Re-mining rather than merging is forced by upstream: the CLI has no export/import/merge verb, and a Chroma collection plus `knowledge_graph.sqlite3` does not union by copying files.
 
 **Attribution:** vendors MIT code from MemPalace — see `plugin-mempalace-docker/NOTICE`.
+
+**Tests:** `python3 -m unittest discover -s plugin-mempalace-docker/tests`
 
 ---
 
@@ -289,6 +298,19 @@ Shared rules:
 - Docker is used only when the gem is in `Gemfile.lock`, because a container cannot `bundle exec` a gem that is missing from its bundle.
 - Overrides: `RUBY_LSP_PLUGIN_SERVICE`, `RUBY_LSP_PLUGIN_FORCE_HOST`, `RUBY_LSP_PLUGIN_FORCE_DOCKER`. The prefix avoids ruby-lsp's own `RUBY_LSP_*` variables.
 - The bundled `config/.reek.yml` is a Rails-tuned fallback, used only when the project has no Reek config.
+- **One shared ruby-lsp per checkout (0.2.0).** `run-ruby-tool.sh lsp` execs `scripts/lsp_bridge.py`, a per-session
+  byte pump that Claude Code keeps for the whole session (it treats any LSP exit as a crash). The bridge connects to
+  `scripts/lsp_hub.py`, a detached, flock-singleton hub per checkout (state in `~/.claude/.ruby-lsp-plugin/hubs/<key>/`,
+  key `sha256(realpath(cwd))[:12]`, `CLAUDE_*` stripped so resource-guard never freezes it).
+- The hub answers `initialize` from a capabilities cache and starts the backend (`run-ruby-tool.sh lsp-backend`,
+  container `ruby-lsp-<key>`) on the first document notification or request. Claude Code sends those only for Write,
+  Edit and the LSP tool, never for a plain Read. It stops the backend after `RUBY_LSP_PLUGIN_IDLE_MINUTES` (default 15)
+  and exits 60 s after its last session. Reek `docker exec`s into the running backend container.
+- `RUBY_LSP_PLUGIN_SHARED=0`, no unix sockets, or a hub that never comes up runs the same hub in-process (solo):
+  lazy and idle-stopping, not shared.
+- ruby-lsp 0.26 serves **pull** diagnostics only (`textDocument/diagnostic`), while Claude Code only reads
+  `publishDiagnostics`. The hub pulls after every document sync and pushes the report; without that, no RuboCop
+  offense reaches Claude.
 
 **Tests:** `python3 -m unittest discover -s plugin-ruby-lsp/tests`
 
@@ -328,6 +350,24 @@ Shared rules:
 - Linux and WSL2 only. On WSL1, macOS and native Windows the hooks do nothing.
 
 **Tests:** `python3 -m unittest discover -s plugin-resource-guard/tests`
+
+---
+
+### eta plugin
+
+**Purpose:** Show how far along a long tool call is — elapsed time against an ETA, in a live band above the prompt.
+
+**How it works:**
+
+- **A mod, not command hooks.** `hooks/hooks.json` is `{ "modules": ["./register.tsx"] }`: the engine loads the TypeScript module and runs it in its own sandbox (no Node, no DOM). Logic lives in `hooks/eta.ts`, hook wiring in `hooks/register.tsx`, the `$.state` contract (`eta.running`) in `types/index.d.ts`.
+- **Timer:** `tool.call` times every call (except `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode`, `Monitor`, `ScheduleWakeup`) and files clean runs of 2 s or more in `$.store`: last 7 per signature, 300 signatures, least recently used dropped first.
+- **ETA order:** history (median) wins once a strong key (Bash command, Workflow name) has 2+ runs; otherwise Claude's `~3m` description hint, which wins on weak keys (agent type, MCP and other tools); otherwise any past runs; otherwise "no estimate yet". A `prompt.compose` section asks Claude for the hint on calls likely to pass 30 s.
+- **Band:** an `AbovePrompt` render hook draws up to 4 lines, `▸ label  1:12 / ~3:06  █████░░░░░░░  hist×4` (or `guess`), for runs past 3 s. Background shells, agents and workflows stay on it, marked `(bg)`, until their `<task-notification>` row arrives or the subagent's `turn.complete` fires.
+- **Overrun:** past 150% of the ETA and at least 15 s over, one toast and one desktop notification per run.
+- **Keep the name `eta`.** The folder is `plugin-eta`, but the `$.state` refs and `$.store` history are keyed by the plugin name.
+- **Generated types:** the engine writes `.claude-plugin/types/` when it loads the mod. It is gitignored and must never be committed.
+
+**Tests:** `claude plugin validate plugin-eta` and `claude plugin test plugin-eta` (28 tests). Re-run both after every Claude Code update: the mods API is early access.
 
 ---
 
@@ -457,10 +497,11 @@ plugin-commit-guard/              # commit-guard plugin — delegate commit-mess
 plugin-gh-issue-to-pr/            # gh-issue-to-pr plugin — GitHub issue-to-merged-PR agent
 plugin-memory-guard/              # memory-guard plugin — watch .claude/**, save to memory, offer stash
 plugin-opencode-migrate/          # opencode-migrate plugin — Claude Code -> opencode migration skill
-plugin-mempalace-docker/          # mempalace-docker plugin — Dockerized MemPalace MCP + CLI + save hooks, GPU-aware
-plugin-ruby-lsp/                  # ruby-lsp plugin — ruby-lsp/RuboCop diagnostics + advisory Reek hook, Docker-first
+plugin-mempalace-docker/          # mempalace-docker plugin — one shared Dockerized MemPalace HTTP hub (MCP + CLI + save hooks), GPU-aware
+plugin-ruby-lsp/                  # ruby-lsp plugin — one shared, idle-stopping ruby-lsp per checkout + advisory Reek hook, Docker-first
 plugin-markdown-lsp/              # markdown-lsp plugin — rumdl LSP diagnostics, skill-derived fallback config, Docker-first
 plugin-resource-guard/            # resource-guard plugin — load gate, freeze/resume of background sessions and containers, WSL-aware
+plugin-eta/                       # eta plugin — mod (TypeScript hooks module) drawing a live ETA band above the prompt
 ```
 
 Each plugin owns its agents and skills directly — no shared root directories, no symlinks. To update an agent or skill, edit it in the plugin directory where it belongs (`plugin-dev/agents/`, `plugin-qa/skills/`, etc.).

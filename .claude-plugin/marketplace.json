@@ -117,13 +117,13 @@
     {
       "name": "mempalace-docker",
       "source": "./plugin-mempalace-docker",
-      "description": "Runs MemPalace from Docker \u2014 auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one shared palace in a named volume, mounts the current project, and auto-mines it per project",
+      "description": "Runs MemPalace from Docker as one shared HTTP hub for every session \u2014 auto-selects the CUDA image when an NVIDIA GPU is usable, keeps one palace in a named volume, mounts registered projects, stops when idle, and auto-mines per project",
       "category": "behavior-control"
     },
     {
       "name": "ruby-lsp",
       "source": "./plugin-ruby-lsp",
-      "description": "Ruby/Rails code intelligence \u2014 ruby-lsp pushes RuboCop diagnostics after every edit, a hook adds advisory Reek smells, Docker-first with host fallback",
+      "description": "Ruby/Rails code intelligence \u2014 ruby-lsp pushes RuboCop diagnostics after every edit, a hook adds advisory Reek smells. One shared ruby-lsp per checkout starts on the first Ruby write and stops when idle, Docker-first with host fallback",
       "category": "quality-enforcement"
     },
     {
@@ -136,6 +136,12 @@
       "name": "resource-guard",
       "source": "./plugin-resource-guard",
       "description": "Keeps concurrent Claude Code sessions from hanging the machine \u2014 gates new heavy work under memory pressure, freezes background sessions' Bash work and Docker containers, resumes them when load drops, caps each session's docker MCP/LSP containers; WSL-aware",
+      "category": "behavior-control"
+    },
+    {
+      "name": "eta",
+      "source": "./plugin-eta",
+      "description": "Live ETA band above the prompt \u2014 times every tool call, estimates from the median of past runs or Claude's ~3m hint, keeps background shells, agents and workflows on the band until they end, and alerts once on an overrun",
       "category": "behavior-control"
     }
   ]

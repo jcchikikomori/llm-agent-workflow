@@ -1,7 +1,7 @@
 {
   "name": "ruby-lsp",
-  "version": "0.1.0",
-  "description": "Ruby/Rails code intelligence for Claude Code — ruby-lsp with RuboCop diagnostics after every edit, advisory Reek smells via hook, Docker-first with host fallback",
+  "version": "0.2.0",
+  "description": "Ruby/Rails code intelligence for Claude Code — ruby-lsp with RuboCop diagnostics after every edit, advisory Reek smells via hook. One shared ruby-lsp per checkout that starts on the first Ruby write and stops when idle, Docker-first with host fallback",
   "author": {
     "name": "John Cyrill Corsanes",
     "url": "https://github.com/jcchikikomori"

@@ -1,7 +1,7 @@
 {
   "mempalace": {
-    "command": "${CLAUDE_PLUGIN_ROOT}/scripts/run-mempalace.sh",
-    "args": [],
-    "env": {}
+    "type": "http",
+    "url": "http://127.0.0.1:${MEMPALACE_HUB_PORT:-8765}/mcp",
+    "headersHelper": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/hub-headers.sh"
   }
 }
